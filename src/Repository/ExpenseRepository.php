@@ -8,6 +8,7 @@ use Budget\Expense\Draft;
 use Budget\Support\Money;
 use DateTimeImmutable;
 use PDO;
+use PDOException;
 
 /**
  * Persistencia de gastos.
@@ -32,33 +33,50 @@ final class ExpenseRepository
      * El lote agrupa los gastos de una misma importación de resumen,
      * para poder confirmarlos o descartarlos juntos.
      */
-    public function guardarBorrador(int $userId, Draft $borrador, ?int $categoryId, ?string $lote = null): int
-    {
+    public function guardarBorrador(
+        int $userId,
+        Draft $borrador,
+        ?int $categoryId,
+        ?string $lote = null,
+        ?string $origenExterno = null,
+    ): int {
         $sentencia = $this->pdo->prepare(
             'INSERT INTO expenses
                 (user_id, monto, moneda, monto_ars, fecha, comercio, descripcion,
-                 category_id, medio_pago, fuente, confianza, modelo, estado, lote)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 category_id, medio_pago, fuente, confianza, modelo, estado, lote, origen_externo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
-        $sentencia->execute([
-            $userId,
-            $borrador->monto->aDecimal(),
-            $borrador->monto->moneda,
-            // Fase 1 opera en pesos; cuando entre el tipo de cambio, este
-            // valor se congela al del día del gasto y no se recalcula.
-            $borrador->monto->aDecimal(),
-            $borrador->fecha->format('Y-m-d'),
-            $borrador->comercio,
-            mb_substr($borrador->descripcion, 0, 255),
-            $categoryId,
-            $borrador->medioPago,
-            $borrador->fuente,
-            $borrador->confianza,
-            $borrador->modelo,
-            self::ESTADO_BORRADOR,
-            $lote,
-        ]);
+        try {
+            $sentencia->execute([
+                $userId,
+                $borrador->monto->aDecimal(),
+                $borrador->monto->moneda,
+                // Fase 1 opera en pesos; cuando entre el tipo de cambio,
+                // este valor se congela al del día del gasto.
+                $borrador->monto->aDecimal(),
+                $borrador->fecha->format('Y-m-d'),
+                $borrador->comercio,
+                mb_substr($borrador->descripcion, 0, 255),
+                $categoryId,
+                $borrador->medioPago,
+                $borrador->fuente,
+                $borrador->confianza,
+                $borrador->modelo,
+                self::ESTADO_BORRADOR,
+                $lote,
+                $origenExterno,
+            ]);
+        } catch (PDOException $e) {
+            // Violación de uk_expenses_origen: este movimiento ya se
+            // importó. Que lo decida la base y no la aplicación es lo
+            // que hace la sincronización segura de repetir.
+            if ($e->getCode() === '23000') {
+                return 0;
+            }
+
+            throw $e;
+        }
 
         return (int) $this->pdo->lastInsertId();
     }

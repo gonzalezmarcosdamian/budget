@@ -32,3 +32,13 @@ prueba('normaliza acentos para poder comparar', function (): void {
     esIgual('educacion', CategoryGuesser::normalizar('Educación'));
     esIgual('cumpleanos', CategoryGuesser::normalizar('cumpleaños'));
 });
+
+prueba('reconoce a las distribuidoras de gas y luz del interior', function (): void {
+    // Salieron de los pagos reales de Mercado Pago: "Ecogas Centro"
+    // quedaba sin categoría.
+    $c = new CategoryGuesser();
+
+    esIgual('Servicios', $c->adivinar('Ecogas Centro'), 'ecogas');
+    esIgual('Servicios', $c->adivinar('pago epec'), 'epec');
+    esIgual('Servicios', $c->adivinar('camuzzi gas'), 'camuzzi');
+});

@@ -48,6 +48,25 @@ try {
     exit(1);
 }
 
+// 3. Pagos nuevos de Mercado Pago, si hay alguna cuenta vinculada.
+try {
+    $mp = $app->sincronizadorMp()->sincronizarTodas();
+
+    if ($mp['cuentas'] > 0) {
+        contar($silencioso, sprintf(
+            'Mercado Pago: %d cuenta(s), %d gasto(s) nuevos, %d falla(s).',
+            $mp['cuentas'],
+            $mp['gastos'],
+            $mp['fallas']
+        ));
+    }
+} catch (Throwable $e) {
+    // Sin APP_KEY o sin cuentas vinculadas esto no aplica, y no es motivo
+    // para que el cron deje de vigilar el webhook.
+    $app->log->excepcion($e, 'cron: sincronización de Mercado Pago');
+    contar($silencioso, 'Mercado Pago sin sincronizar: ' . $e->getMessage());
+}
+
 $alerta = HealthCheck::alerta($info);
 
 if ($alerta === null) {

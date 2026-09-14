@@ -10,7 +10,11 @@ use Budget\Database\Connection;
 use Budget\Expense\CategoryGuesser;
 use Budget\Expense\FastParser;
 use Budget\Handler\Dispatcher;
+use Budget\Expense\CategoryGuesser as Categorizador;
 use Budget\Handler\Reports;
+use Budget\Integracion\SincronizadorMp;
+use Budget\Repository\MercadoPagoRepository;
+use Budget\Support\Cifrado;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Repository\UpdateLog;
@@ -66,6 +70,24 @@ final class App
     public function telegram(): Client
     {
         return $this->telegram ??= new Client($this->config->botToken());
+    }
+
+    public function sincronizadorMp(): SincronizadorMp
+    {
+        $pdo = $this->pdo();
+
+        return new SincronizadorMp(
+            cuentas: new MercadoPagoRepository($pdo),
+            gastos: new ExpenseRepository($pdo),
+            categorias: new CategoryRepository($pdo),
+            usuarios: new UserRepository($pdo),
+            categorizador: new Categorizador(),
+            cifrado: Cifrado::conClaveHex($this->config->claveDeCifrado()),
+            telegram: $this->telegram(),
+            http: new Http(),
+            reloj: $this->reloj,
+            log: $this->log,
+        );
     }
 
     public function updates(): UpdateLog

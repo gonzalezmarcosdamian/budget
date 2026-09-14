@@ -34,7 +34,8 @@ final class CategoryGuesser
             'patente',
         ],
         'Servicios' => [
-            'luz', 'edenor', 'edesur', 'metrogas', 'aysa',
+            'luz', 'edenor', 'edesur', 'metrogas', 'ecogas', 'camuzzi',
+            'naturgy', 'epec', 'aguas', 'aysa',
             'internet', 'fibertel', 'telecentro', 'movistar', 'personal',
             'claro', 'netflix', 'spotify', 'disney', 'chatgpt',
             'telefono', 'cable', 'suscripcion',

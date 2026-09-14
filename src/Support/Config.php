@@ -76,6 +76,15 @@ final class Config
         return $this->env->entero('OWNER_CHAT_ID', 0);
     }
 
+    /**
+     * Clave con la que se cifran las credenciales de terceros guardadas
+     * en la base. Se valida al usarse: migrar no la necesita.
+     */
+    public function claveDeCifrado(): string
+    {
+        return $this->env->requerido('APP_KEY');
+    }
+
     /** Cadena vacía cuando no está configurada: el proveedor se saltea solo. */
     public function claveIa(string $variable): string
     {

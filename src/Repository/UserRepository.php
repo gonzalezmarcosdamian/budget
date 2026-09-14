@@ -34,6 +34,19 @@ final class UserRepository
         return $fila === false ? null : $fila;
     }
 
+    /** @return array<string,mixed>|null */
+    public function porId(int $userId): ?array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT id, telegram_chat_id, nombre, zona_horaria, moneda_base, estado
+             FROM users WHERE id = ?'
+        );
+        $sentencia->execute([$userId]);
+        $fila = $sentencia->fetch();
+
+        return $fila === false ? null : $fila;
+    }
+
     public function crear(int $chatId, string $nombre, string $zona, string $moneda): int
     {
         $sentencia = $this->pdo->prepare(

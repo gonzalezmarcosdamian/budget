@@ -20,6 +20,47 @@ final class Http
     }
 
     /**
+     * @param list<string> $cabeceras
+     * @return array<string,mixed>
+     */
+    public function getJson(string $url, array $cabeceras = []): array
+    {
+        $ch = curl_init($url);
+
+        if ($ch === false) {
+            throw new RuntimeException('No se pudo inicializar cURL');
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $this->timeoutSegundos,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTPHEADER => array_merge(['Accept: application/json'], $cabeceras),
+        ]);
+
+        $respuesta = curl_exec($ch);
+        $codigo = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($respuesta === false) {
+            throw new RuntimeException("Error de red: {$error}");
+        }
+
+        if ($codigo >= 400) {
+            throw new RuntimeException("El proveedor respondió {$codigo}: " . substr((string) $respuesta, 0, 200));
+        }
+
+        $decodificado = json_decode((string) $respuesta, true);
+
+        if (!is_array($decodificado)) {
+            throw new RuntimeException('Respuesta que no es JSON');
+        }
+
+        return $decodificado;
+    }
+
+    /**
      * @param array<string,mixed> $cuerpo
      * @param list<string> $cabeceras
      * @return array<string,mixed>
