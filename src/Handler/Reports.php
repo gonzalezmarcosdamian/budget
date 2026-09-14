@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Budget\Handler;
 
+use Budget\Expense\Pregunta;
+use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Support\Money;
 use DateTimeImmutable;
@@ -20,8 +22,79 @@ final class Reports
     /** Cuántas contrapartes entran en el reporte antes de volverse ruido. */
     private const CONTRAPARTES_EN_EL_REPORTE = 5;
 
-    public function __construct(private readonly ExpenseRepository $gastos)
+    public function __construct(
+        private readonly ExpenseRepository $gastos,
+        private readonly ?CategoryRepository $categorias = null,
+    ) {
+    }
+
+    /**
+     * Contesta una pregunta sobre los gastos ya cargados.
+     *
+     * Las cifras salen de la base, nunca de un modelo: un número
+     * inventado en un reporte de plata es peor que no contestar.
+     */
+    public function responder(int $userId, Pregunta $p, DateTimeImmutable $hoy): string
     {
+        [$desde, $hasta, $etiqueta] = $p->rango($hoy);
+
+        if ($p->categoria !== null && $this->categorias !== null) {
+            $categoryId = $this->categorias->idPorNombre($userId, $p->categoria);
+
+            if ($categoryId !== null) {
+                $total = $this->gastos->totalDeCategoria($userId, $categoryId, $desde, $hasta);
+
+                if ($total->centavos === 0) {
+                    return sprintf(
+                        'No tenés nada cargado en <b>%s</b> %s.',
+                        ExpenseCard::escapar($p->categoria),
+                        ExpenseCard::escapar($etiqueta)
+                    );
+                }
+
+                $general = $this->gastos->totalEntre($userId, $desde, $hasta);
+
+                return sprintf(
+                    "En <b>%s</b> %s llevás <b>%s</b>.
+
+<i>Es el %d%% de los %s que gastaste en total.</i>",
+                    ExpenseCard::escapar($p->categoria),
+                    ExpenseCard::escapar($etiqueta),
+                    ExpenseCard::escapar($total->formatear()),
+                    $total->porcentajeDe($general),
+                    ExpenseCard::escapar($general->formatear())
+                );
+            }
+        }
+
+        $total = $this->gastos->totalEntre($userId, $desde, $hasta);
+
+        if ($total->centavos === 0) {
+            return sprintf('No tenés gastos cargados %s.', ExpenseCard::escapar($etiqueta));
+        }
+
+        $lineas = [
+            sprintf(
+                '%s gastaste <b>%s</b> en %d movimientos.',
+                ExpenseCard::escapar(ucfirst($etiqueta)),
+                ExpenseCard::escapar($total->formatear()),
+                $this->gastos->cantidadEntre($userId, $desde, $hasta)
+            ),
+            '',
+        ];
+
+        foreach (array_slice($this->gastos->totalPorCategoria($userId, $desde, $hasta), 0, 5) as $r) {
+            $lineas[] = sprintf(
+                '%s %s — <b>%s</b>  <i>%d%%</i>',
+                $r['emoji'],
+                ExpenseCard::escapar($r['categoria']),
+                ExpenseCard::escapar($r['total']->formatear()),
+                $r['total']->porcentajeDe($total)
+            );
+        }
+
+        return implode("
+", $lineas);
     }
 
     public function delDia(int $userId, DateTimeImmutable $dia): string

@@ -1,0 +1,111 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Budget\Expense;
+
+use DateTimeImmutable;
+
+/**
+ * Entiende preguntas sobre los gastos ya cargados.
+ *
+ * "cuánto gasté en súper este mes" es una pregunta que el bot puede
+ * contestar con datos que ya tiene. Responder "no encontré un importe"
+ * a eso es desperdiciar lo único que sabe hacer.
+ *
+ * Es deterministico a propósito: las cifras las calcula la base, no un
+ * modelo. Un número inventado en un reporte de plata es peor que no
+ * contestar.
+ */
+final class Pregunta
+{
+    /** Señales de que el mensaje pregunta en vez de anotar un gasto. */
+    private const MARCAS = [
+        'cuanto', 'cuánto', 'cuanta', 'cuánta', 'que gaste', 'qué gasté',
+        'en que gaste', 'en qué gasté', 'gaste en', 'gasté en',
+        'cuales', 'cuáles', 'total de', 'resumen de', 'mostrame', 'decime',
+    ];
+
+    /** Frase => cuántos meses hacia atrás, o null para el período especial. */
+    private const PERIODOS = [
+        'mes pasado' => 'mes_pasado',
+        'mes anterior' => 'mes_pasado',
+        'este mes' => 'mes',
+        'este año' => 'anio',
+        'este anio' => 'anio',
+        'en el año' => 'anio',
+        'hoy' => 'dia',
+        'ayer' => 'ayer',
+        'esta semana' => 'semana',
+    ];
+
+    private function __construct(
+        public readonly ?string $categoria,
+        public readonly string $periodo,
+    ) {
+    }
+
+    /**
+     * Devuelve null cuando el mensaje no parece una pregunta. Null es la
+     * señal de seguir con el camino normal, no un error.
+     */
+    public static function desde(string $texto, CategoryGuesser $categorizador): ?self
+    {
+        $normalizado = CategoryGuesser::normalizar($texto);
+
+        if (!self::pareceUnaPregunta($normalizado, $texto)) {
+            return null;
+        }
+
+        return new self($categorizador->adivinar($texto), self::periodo($normalizado));
+    }
+
+    private static function pareceUnaPregunta(string $normalizado, string $original): bool
+    {
+        if (str_contains($original, '?') || str_contains($original, '¿')) {
+            return true;
+        }
+
+        foreach (self::MARCAS as $marca) {
+            if (str_contains($normalizado, CategoryGuesser::normalizar($marca))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function periodo(string $normalizado): string
+    {
+        // "mes pasado" antes que "mes": el orden decide, y al revés
+        // cualquier pregunta sobre el mes pasado contestaría por este.
+        foreach (self::PERIODOS as $frase => $periodo) {
+            if (str_contains($normalizado, CategoryGuesser::normalizar($frase))) {
+                return $periodo;
+            }
+        }
+
+        return 'mes';
+    }
+
+    /**
+     * El rango de fechas que hay que consultar.
+     *
+     * @return array{0:DateTimeImmutable, 1:DateTimeImmutable, 2:string}
+     */
+    public function rango(DateTimeImmutable $hoy): array
+    {
+        return match ($this->periodo) {
+            'dia' => [$hoy, $hoy, 'hoy'],
+            'ayer' => [$hoy->modify('-1 day'), $hoy->modify('-1 day'), 'ayer'],
+            'semana' => [$hoy->modify('monday this week'), $hoy, 'esta semana'],
+            'mes_pasado' => [
+                $hoy->modify('first day of last month'),
+                $hoy->modify('last day of last month'),
+                'el mes pasado',
+            ],
+            'anio' => [$hoy->modify('first day of January'), $hoy, 'este año'],
+            default => [$hoy->modify('first day of this month'), $hoy, 'este mes'],
+        };
+    }
+}

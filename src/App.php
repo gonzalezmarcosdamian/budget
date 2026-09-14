@@ -123,7 +123,7 @@ final class App
             categorias: new CategoryRepository($pdo),
             parser: new FastParser($this->reloj, new CategoryGuesser()),
             ia: $this->router(),
-            reportes: new Reports(new ExpenseRepository($pdo)),
+            reportes: new Reports(new ExpenseRepository($pdo), new CategoryRepository($pdo)),
             config: $this->config,
             reloj: $this->reloj,
             log: $this->log,

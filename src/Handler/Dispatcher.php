@@ -7,7 +7,9 @@ namespace Budget\Handler;
 use Budget\Ai\Extraction;
 use Budget\Ai\Router;
 use Budget\Expense\Draft;
+use Budget\Expense\CategoryGuesser;
 use Budget\Expense\FastParser;
+use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\RecurringRepository;
 use Budget\Repository\ExpenseRepository;
@@ -127,13 +129,26 @@ final class Dispatcher
     private function manejarTexto(int $userId, Update $update): void
     {
         $rapido = $this->parser->parsear($update->texto);
+
+        // Antes de intentar extraer un gasto: puede ser una pregunta
+        // sobre lo que ya está cargado, y contestarla es gratis.
+        if ($rapido === null) {
+            $pregunta = Pregunta::desde($update->texto, new CategoryGuesser());
+
+            if ($pregunta !== null) {
+                $this->telegram->enviarMensaje(
+                    $update->chatId,
+                    $this->reportes->responder($userId, $pregunta, $this->reloj->ahora())
+                );
+
+                return;
+            }
+        }
+
         $borradores = $rapido !== null ? [$rapido] : $this->extraerConIa($userId, $update);
 
         if ($borradores === []) {
-            $this->telegram->enviarMensaje(
-                $update->chatId,
-                'No encontré un importe ahí. Probá con algo como <code>1200 super</code>.'
-            );
+            $this->telegram->enviarMensaje($update->chatId, self::noEntendi());
 
             return;
         }
@@ -723,6 +738,25 @@ final class Dispatcher
             ExpenseCard::escapar($acumulado->formatear()),
             ExpenseCard::escapar((string) ($gasto['categoria'] ?? 'esa categoría'))
         );
+    }
+
+    /**
+     * Lo que se dice cuando no se entendió.
+     *
+     * "No encontré un importe" es un callejón sin salida: no dice qué
+     * más se puede hacer. Si el bot no entendió, al menos que muestre
+     * las salidas.
+     */
+    private static function noEntendi(): string
+    {
+        return implode("\n", [
+            'No pude sacar un gasto de ahí. Probá con alguna de estas:',
+            '',
+            '• <code>1200 super</code> — un gasto',
+            '• <code>cuánto gasté en súper este mes</code> — una pregunta',
+            '• Una foto del ticket, un audio o el PDF del resumen',
+            '• /mes para el resumen completo',
+        ]);
     }
 
     private function ayuda(): string
