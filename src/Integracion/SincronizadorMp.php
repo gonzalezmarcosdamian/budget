@@ -106,7 +106,7 @@ final class SincronizadorMp
 
             // Del más viejo al más nuevo, para que el listado quede en orden.
             foreach (array_reverse($pagos) as $pago) {
-                $nuevos += $this->importar($userId, $pago, $lote);
+                $nuevos += $this->importar($userId, $pago, $lote, $cliente);
             }
 
             if (count($pagos) < self::POR_PAGINA) {
@@ -145,12 +145,32 @@ final class SincronizadorMp
      * @param array<string,mixed> $pago
      * @return int 1 si se importó, 0 si ya estaba
      */
-    private function importar(int $userId, array $pago, string $lote): int
+    private function importar(int $userId, array $pago, string $lote, ?MercadoPago $cliente = null): int
     {
         $borrador = MercadoPago::aBorrador($pago);
 
         if ($borrador === null) {
             return 0;
+        }
+
+        // Para las transferencias se pide el detalle: es la única forma
+        // de saber quién cobró, y sin eso todas quedan como "Varios".
+        $contraparte = null;
+
+        if ($cliente !== null) {
+            try {
+                $contraparte = $cliente->contraparteDe($pago);
+            } catch (Throwable $e) {
+                $this->log->advertencia('no se pudo leer el destinatario', ['pago' => (string) ($pago['id'] ?? '')]);
+            }
+        }
+
+        if ($contraparte !== null) {
+            $alias = $this->aliasDeContraparte($userId, $contraparte);
+
+            if ($alias !== null) {
+                $borrador = $borrador->conComercio($alias);
+            }
         }
 
         $categoria = $this->categorizador->adivinar($borrador->comercio);
@@ -186,6 +206,18 @@ final class SincronizadorMp
         } catch (Throwable) {
             return $ahora->modify('-' . self::DIAS_PRIMERA_SYNC . ' days');
         }
+    }
+
+    /** El nombre que el usuario ya le puso a ese destinatario, si lo tiene. */
+    private function aliasDeContraparte(int $userId, string $externo): ?string
+    {
+        $sentencia = $this->gastos->pdo()->prepare(
+            'SELECT alias FROM contrapartes WHERE user_id = ? AND externo = ?'
+        );
+        $sentencia->execute([$userId, $externo]);
+        $alias = $sentencia->fetchColumn();
+
+        return $alias === false || $alias === '' ? null : (string) $alias;
     }
 
     private function categoriaId(int $userId, string $comercio, ?string $categoria): ?int

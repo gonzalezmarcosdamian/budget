@@ -29,6 +29,12 @@ final class ExpenseRepository
     {
     }
 
+    /** Para consultas puntuales de otras piezas, sin duplicar la conexión. */
+    public function pdo(): PDO
+    {
+        return $this->pdo;
+    }
+
     /**
      * El lote agrupa los gastos de una misma importación de resumen,
      * para poder confirmarlos o descartarlos juntos.

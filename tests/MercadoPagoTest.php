@@ -97,3 +97,23 @@ prueba('la referencia del pago es estable', function (): void {
     // Es lo que evita importar dos veces el mismo movimiento.
     esIgual('mp:123456789', MercadoPago::referencia(pagoMp()));
 });
+
+prueba('limpia el apodo autogenerado de Mercado Pago', function (): void {
+    // MP arma el apodo con apellido + fecha de registro pegados.
+    esIgual('Delpascual', MercadoPago::nombreLegible('DELPASCUAL20220203174229'));
+    esIgual('Nietomaria', MercadoPago::nombreLegible('NIETOMARIA20230118185650'));
+    esIgual('Goma', MercadoPago::nombreLegible('GOMA1285147'));
+});
+
+prueba('respeta un apodo elegido por la persona', function (): void {
+    // El guión bajo cuenta como separador de palabras, así que cada
+    // parte queda capitalizada. Es legible y no hace falta más.
+    esIgual('Chipi_Mdg', MercadoPago::nombreLegible('CHIPI_MDG'));
+});
+
+prueba('un apodo que es sólo números queda como está', function (): void {
+    // Sacarle los dígitos dejaría la cadena vacía: mejor el original
+    // que un fragmento sin sentido.
+    esIgual('123456789', MercadoPago::nombreLegible('123456789'));
+    esIgual('AB99999', MercadoPago::nombreLegible('AB99999'), 'dos letras no alcanzan');
+});

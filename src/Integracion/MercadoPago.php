@@ -85,6 +85,72 @@ final class MercadoPago
         return array_values(array_filter($resultados, 'is_array'));
     }
 
+    /**
+     * Quién cobró una transferencia.
+     *
+     * La búsqueda de pagos no lo trae: hay que pedir el detalle. Es una
+     * llamada más por movimiento, y vale la pena sólo para las
+     * transferencias, que sin esto quedan todas como "Varios".
+     *
+     * @param array<string,mixed> $pago
+     */
+    public function contraparteDe(array $pago): ?string
+    {
+        $id = (string) ($pago['id'] ?? '');
+
+        if ($id === '' || (string) ($pago['operation_type'] ?? '') !== 'money_transfer') {
+            return null;
+        }
+
+        $detalle = $this->http->getJson(
+            self::BASE . '/v1/payments/' . $id,
+            ['Authorization: Bearer ' . $this->accessToken]
+        );
+
+        $collector = $detalle['collector'] ?? null;
+        $collectorId = is_array($collector) ? ($collector['id'] ?? null) : null;
+
+        return $collectorId === null ? null : (string) $collectorId;
+    }
+
+    /**
+     * El apodo público de un usuario de Mercado Pago.
+     *
+     * No es reversión de nada: el id no es un hash, es un identificador
+     * interno, y el nombre simplemente no viaja en el movimiento. Pero
+     * el perfil sí es consultable, y MP autogenera el apodo con el
+     * apellido de la persona cuando no eligió uno.
+     */
+    public function apodoDe(string $collectorId): string
+    {
+        $perfil = $this->http->getJson(
+            self::BASE . '/users/' . urlencode($collectorId),
+            ['Authorization: Bearer ' . $this->accessToken]
+        );
+
+        return trim((string) ($perfil['nickname'] ?? ''));
+    }
+
+    /**
+     * Convierte "DELPASCUAL20220203174229" en "Delpascual".
+     *
+     * El apodo autogenerado es apellido + fecha de registro pegados. Se
+     * saca la fecha y se deja el resto como está: separar palabras seria
+     * adivinar, y un apellido mal partido es peor que uno todo junto.
+     */
+    public static function nombreLegible(string $apodo): string
+    {
+        $limpio = (string) preg_replace('/\d+$/', '', trim($apodo));
+
+        // Un apodo que era sólo números, o casi, no aporta nada: mejor
+        // devolver el original que un fragmento sin sentido.
+        if (mb_strlen($limpio) < 3) {
+            return $apodo;
+        }
+
+        return mb_convert_case($limpio, MB_CASE_TITLE, 'UTF-8');
+    }
+
     /** Identificador estable del pago, para no importarlo dos veces. */
     public static function referencia(array $pago): string
     {
