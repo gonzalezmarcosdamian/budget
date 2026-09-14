@@ -105,6 +105,19 @@ que el webhook siga contestando.
 Secretos necesarios en el repo: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`,
 `FTP_DIR`, `WEBHOOK_URL`.
 
+### En producción
+
+| | |
+|---|---|
+| URL del webhook | `https://bot.marcosdamiangonzalez.ar/webhook.php` |
+| Cuenta cPanel | `botgasto` en `cpanel173.wnpservers.net`, dedicada al bot |
+| Aplicación | `/home/botgasto/budget` — fuera del document root |
+| Punto público | `/home/botgasto/public_html/webhook.php`, un puente de una línea |
+| Base | `botgasto_budget` |
+| Cron | `7 * * * *` → `bin/cron.php --quiet` |
+
+Las credenciales viven en `%APPDATA%udget\wnpower.json`, fuera del repositorio.
+
 ### Puesta en marcha, una sola vez
 
 El bot vive en `bot.marcosdamiangonzalez.ar`. Esa URL no la ve nadie: los

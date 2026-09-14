@@ -356,3 +356,50 @@ documentación general, no de consultar la instalación concreta. La API de WHM
 estaba a un pedido de distancia y decía lo contrario. Ante una pregunta de
 capacidades, primero se le pregunta al sistema; la documentación es el respaldo,
 no la fuente.
+
+
+---
+
+## 18. Un puente de una línea en vez de mover el document root
+
+**Contexto.** En la cuenta de cPanel, el dominio principal sirve desde
+`public_html`, y la aplicación necesita que el document root sea `public/`. Mover
+el document root del dominio principal de una cuenta no es una operación limpia
+por API.
+
+**Decisión.** La aplicación vive en `/budget` (fuera del alcance de HTTP) y en
+`/public_html/webhook.php` hay un archivo de una línea:
+
+```php
+require dirname(__DIR__) . '/budget/public/webhook.php';
+```
+
+**Consecuencias.** El repositorio no lleva ninguna ruta parcheada: el código
+desplegado es idéntico al versionado. El único archivo que existe sólo en el
+servidor es el puente, y no cambia nunca. `__DIR__` dentro del webhook real
+sigue apuntando a `/budget/public`, así que la resolución de rutas no cambia.
+
+Verificado en producción: `src/App.php` da 404 y `.env` da 403 por HTTP.
+
+---
+
+## 19. Sin SSH, el cron es la consola
+
+**Contexto.** La cuenta tiene `/bin/bash` y la feature `ssh` habilitada, pero el
+puerto no responde desde afuera: o está en un puerto no estándar o el firewall
+lo filtra. Insistir probando puertos es exactamente lo que dispara el bloqueo de
+IP descripto en la decisión 14.
+
+**Decisión.** Las tareas que necesitan ejecutar PHP en el servidor —migraciones,
+diagnóstico— se corren agregando una línea de cron por la API de cPanel, que
+escribe su salida a `storage/setup.log`, y después se borra la línea. El archivo
+se baja por FTPS.
+
+**Consecuencias.** Es más lento que un `ssh` (hay que esperar a que el cron
+dispare) pero no requiere abrir nada ni adivinar puertos. La primera instalación
+se hizo así y quedó registrada: PHP 8.3.33, MariaDB 10.11.19, migraciones
+aplicadas, `.env` en 0600 y fuera del document root.
+
+**Detalle que costó una corrida.** Git Bash convierte rutas absolutas al pasarlas
+como argumento: `/usr/local/bin/php` llegó al crontab como
+`C:/Program Files/Git/usr/local/bin/php`. Se resuelve con `MSYS_NO_PATHCONV=1`.
