@@ -141,14 +141,19 @@ jobs:
           server-dir: ${{ secrets.FTP_DIR }}
           # El .env de producción vive en el servidor y nunca se pisa
           # desde el repo: es el único archivo con secretos reales.
+          # Al servidor sólo va lo que la aplicación ejecuta. La
+          # documentación y la configuración de agentes viven en el repo.
           exclude: |
             **/.git*
             **/.git*/**
             **/.github/**
+            **/.claude/**
             **/tests/**
             **/docker/**
             **/docs/**
             docker-compose.yml
+            CLAUDE.md
+            README.md
             .env
             .env.example
             storage/**
