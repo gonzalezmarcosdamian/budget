@@ -592,17 +592,58 @@ final class Dispatcher
         $comercio = (string) $gasto['comercio'];
         $categoria = (string) ($gasto['categoria'] ?? 'Sin categoría');
 
-        $this->telegram->editarMensaje(
-            $update->chatId,
-            $update->messageId,
+        $lineas = [
             sprintf(
-                '%s <b>%s</b> — <b>%s</b>%s%s',
+                '%s <b>%s</b> — <b>%s</b>',
                 $icono,
                 ExpenseCard::escapar($comercio !== '' ? $comercio : 'Gasto'),
-                ExpenseCard::escapar($monto->formatear()),
-                "\n",
-                '📁 ' . ExpenseCard::escapar($categoria)
-            )
+                ExpenseCard::escapar($monto->formatear())
+            ),
+            '📁 ' . ExpenseCard::escapar($categoria),
+        ];
+
+        // Guardar un gasto sin decir cómo viene el mes deja al usuario
+        // con un dato y sin ninguna consecuencia.
+        $acumulado = $this->acumuladoDeCategoria($userId, $gasto);
+
+        if ($acumulado !== '') {
+            $lineas[] = '';
+            $lineas[] = $acumulado;
+        }
+
+        $this->telegram->editarMensaje($update->chatId, $update->messageId, implode("\n", $lineas));
+    }
+
+    /**
+     * Cuánto va del mes en esa categoría, para que confirmar un gasto
+     * también informe algo.
+     *
+     * @param array<string,mixed> $gasto
+     */
+    private function acumuladoDeCategoria(int $userId, array $gasto): string
+    {
+        $categoryId = $gasto['category_id'] ?? null;
+
+        if ($categoryId === null) {
+            return '';
+        }
+
+        $hoy = $this->reloj->ahora();
+        $acumulado = $this->gastos->totalDeCategoria(
+            $userId,
+            (int) $categoryId,
+            $hoy->modify('first day of this month'),
+            $hoy->modify('last day of this month')
+        );
+
+        if ($acumulado->centavos === 0) {
+            return '';
+        }
+
+        return sprintf(
+            '<i>Llevás %s en %s este mes.</i>',
+            ExpenseCard::escapar($acumulado->formatear()),
+            ExpenseCard::escapar((string) ($gasto['categoria'] ?? 'esa categoría'))
         );
     }
 

@@ -11,8 +11,9 @@ use DateTimeImmutable;
 /**
  * Los resúmenes que el bot devuelve ante /hoy, /mes y /ultimos.
  *
- * Formatear es su único trabajo: los totales los calcula la base, que
- * para eso tiene los índices.
+ * Un total suelto no dice nada: $2.400.000 este mes puede ser mucho o
+ * poco. Lo que informa es contra qué se compara y hacia dónde va, así
+ * que cada reporte lleva su contexto.
  */
 final class Reports
 {
@@ -28,10 +29,32 @@ final class Reports
             return '📅 Hoy no cargaste ningún gasto.';
         }
 
-        return sprintf(
-            "📅 <b>Hoy</b>\n\nTotal: <b>%s</b>",
-            ExpenseCard::escapar($total->formatear())
-        );
+        $cuantos = $this->gastos->cantidadEntre($userId, $dia, $dia);
+        $delMes = $this->gastos->totalEntre($userId, $dia->modify('first day of this month'), $dia);
+        $promedio = Metricas::promedioDiario($delMes, $dia);
+
+        $lineas = [
+            '📅 <b>Hoy</b>',
+            '',
+            sprintf(
+                '<b>%s</b> en %d %s',
+                ExpenseCard::escapar($total->formatear()),
+                $cuantos,
+                $cuantos === 1 ? 'gasto' : 'gastos'
+            ),
+        ];
+
+        // Sin la referencia, el número del día no se puede leer.
+        if ($promedio->centavos > 0) {
+            $variacion = Metricas::variacion($total, $promedio);
+            $lineas[] = sprintf(
+                '📊 Tu promedio del mes es %s por día%s',
+                ExpenseCard::escapar($promedio->formatear()),
+                $variacion === null ? '' : '  ·  ' . Metricas::flecha($variacion)
+            );
+        }
+
+        return implode("\n", $lineas);
     }
 
     public function delMes(int $userId, DateTimeImmutable $enElMes): string
@@ -45,25 +68,14 @@ final class Reports
             return '📊 Todavía no hay gastos confirmados este mes.';
         }
 
-        $porNaturaleza = $this->gastos->gastoPorNaturaleza($userId, $desde, $hasta);
-        $fijo = $porNaturaleza['fijo'] ?? Money::deCentavos(0);
-        $variable = $porNaturaleza['variable'] ?? Money::deCentavos(0);
-
         $lineas = [
             sprintf('📊 <b>%s</b>', ExpenseCard::escapar(self::nombreDelMes($enElMes))),
             '',
             'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>',
         ];
 
-        // El corte que vuelve accionable el reporte: sobre el gasto
-        // variable se puede decidir algo, sobre el fijo casi nada.
-        if ($fijo->centavos > 0 && $variable->centavos > 0) {
-            $lineas[] = sprintf(
-                '🔒 Fijo: %s  <i>%d%%</i>   ·   🔀 Variable: %s',
-                ExpenseCard::escapar($fijo->formatear()),
-                $fijo->porcentajeDe($total),
-                ExpenseCard::escapar($variable->formatear())
-            );
+        foreach ($this->contexto($userId, $enElMes, $desde, $total) as $linea) {
+            $lineas[] = $linea;
         }
 
         $lineas[] = '';
@@ -78,7 +90,77 @@ final class Reports
             );
         }
 
+        $cuantos = $this->gastos->cantidadEntre($userId, $desde, $hasta);
+        $lineas[] = '';
+        $lineas[] = sprintf('<i>%d movimientos</i>', $cuantos);
+
         return implode("\n", $lineas);
+    }
+
+    /**
+     * Las tres cuentas que vuelven accionable el total.
+     *
+     * @return list<string>
+     */
+    private function contexto(
+        int $userId,
+        DateTimeImmutable $hoy,
+        DateTimeImmutable $desde,
+        Money $total,
+    ): array {
+        $lineas = [];
+
+        // 1. Fijo contra variable: sobre el variable se puede decidir.
+        $porNaturaleza = $this->gastos->gastoPorNaturaleza($userId, $desde, $hoy->modify('last day of this month'));
+        $fijo = $porNaturaleza['fijo'] ?? Money::deCentavos(0);
+        $variable = $porNaturaleza['variable'] ?? Money::deCentavos(0);
+
+        if ($fijo->centavos > 0 && $variable->centavos > 0) {
+            $lineas[] = sprintf(
+                '🔒 Fijo %s <i>(%d%%)</i>   ·   🔀 Variable %s',
+                ExpenseCard::escapar($fijo->formatear()),
+                $fijo->porcentajeDe($total),
+                ExpenseCard::escapar($variable->formatear())
+            );
+        }
+
+        // 2. Contra el mismo tramo del mes pasado, no contra el mes entero.
+        [$desdeAnterior, $hastaAnterior] = Metricas::tramoDelMesAnterior($hoy);
+        $anterior = $this->gastos->totalEntre($userId, $desdeAnterior, $hastaAnterior);
+        $variacion = Metricas::variacion($total, $anterior);
+
+        if ($variacion !== null) {
+            $lineas[] = sprintf(
+                '%s vs los primeros %d días de %s (%s)',
+                Metricas::flecha($variacion),
+                (int) $hastaAnterior->format('j'),
+                ExpenseCard::escapar(self::nombreDelMes($desdeAnterior, false)),
+                ExpenseCard::escapar($anterior->formatear())
+            );
+        }
+
+        // 3. A este ritmo, dónde termina el mes.
+        $proyeccion = Metricas::proyeccion($total, $hoy);
+
+        if ($proyeccion !== null) {
+            $lineas[] = sprintf(
+                '📅 %s por día  ·  cierra cerca de <b>%s</b>',
+                ExpenseCard::escapar(Metricas::promedioDiario($total, $hoy)->formatear()),
+                ExpenseCard::escapar($proyeccion->formatear())
+            );
+        }
+
+        $mayor = $this->gastos->mayorGasto($userId, $desde, $hoy->modify('last day of this month'));
+
+        if ($mayor !== null && $mayor['comercio'] !== '') {
+            $lineas[] = sprintf(
+                '🔝 El más grande: %s — %s',
+                ExpenseCard::escapar(mb_substr($mayor['comercio'], 0, 34)),
+                ExpenseCard::escapar($mayor['monto']->formatear())
+            );
+        }
+
+        return $lineas;
     }
 
     public function ultimos(int $userId): string
@@ -114,13 +196,15 @@ final class Reports
         return $fecha === false ? $fechaIso : $fecha->format('d/m');
     }
 
-    private static function nombreDelMes(DateTimeImmutable $fecha): string
+    private static function nombreDelMes(DateTimeImmutable $fecha, bool $conAnio = true): string
     {
         $meses = [
             1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
         ];
 
-        return ($meses[(int) $fecha->format('n')] ?? '') . ' ' . $fecha->format('Y');
+        $nombre = $meses[(int) $fecha->format('n')] ?? '';
+
+        return $conAnio ? $nombre . ' ' . $fecha->format('Y') : $nombre;
     }
 }

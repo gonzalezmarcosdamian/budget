@@ -137,6 +137,75 @@ final class ExpenseRepository
         return $sentencia->rowCount();
     }
 
+    /** Cuántos gastos confirmados hay en el período. */
+    public function cantidadEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): int
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND fecha BETWEEN ? AND ?'
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        return (int) $sentencia->fetchColumn();
+    }
+
+    /** @return array{comercio:string, monto:Money}|null el gasto más grande del período */
+    public function mayorGasto(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): ?array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT comercio, monto_ars FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND fecha BETWEEN ? AND ?
+             ORDER BY monto_ars DESC LIMIT 1'
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+        $fila = $sentencia->fetch();
+
+        if ($fila === false) {
+            return null;
+        }
+
+        return [
+            'comercio' => (string) $fila['comercio'],
+            'monto' => Money::deDecimal((string) $fila['monto_ars']),
+        ];
+    }
+
+    /** Lo gastado en una categoría dentro del período, para el acumulado de la tarjeta. */
+    public function totalDeCategoria(
+        int $userId,
+        int $categoryId,
+        DateTimeImmutable $desde,
+        DateTimeImmutable $hasta,
+    ): Money {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(monto_ars), 0) FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND category_id = ?
+               AND fecha BETWEEN ? AND ?'
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $categoryId,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        return Money::deDecimal((string) $sentencia->fetchColumn());
+    }
+
     /**
      * Cuánto del gasto del período es fijo y cuánto variable.
      *
