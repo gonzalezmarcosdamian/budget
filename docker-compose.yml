@@ -1,0 +1,57 @@
+# Ciclo de pruebas previo a producción.
+#
+#   docker compose up -d --build
+#   docker compose exec app php bin/migrate.php
+#   docker compose exec app php tests/run.php
+#
+# La gracia no es correr el bot en local: es que las migraciones y los
+# tests de integración se ejecuten contra un MariaDB de verdad antes de
+# que el deploy toque la base de producción, donde no hay rollback.
+
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: budget
+      MARIADB_USER: budget
+      MARIADB_PASSWORD: budget
+    ports:
+      # Configurable porque 3306/3307 suelen estar tomados por un MySQL
+      # ya instalado: DB_HOST_PORT=3320 docker compose up -d
+      - "${DB_HOST_PORT:-3310}:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: ./docker
+    ports:
+      - "${APP_HOST_PORT:-8088}:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      # El entorno pisa al .env, así que el contenedor no necesita uno.
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: budget
+      DB_USER: budget
+      DB_PASS: budget
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_TIMEZONE: America/Argentina/Buenos_Aires
+      # Valores de juguete: alcanzan para arrancar y migrar sin tener que
+      # pegar credenciales reales en un archivo versionado.
+      TELEGRAM_BOT_TOKEN: "0:local"
+      TELEGRAM_WEBHOOK_SECRET: "local"
+      INVITE_CODE: "local"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  dbdata:

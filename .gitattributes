@@ -1,0 +1,11 @@
+# El código se despliega a un servidor Linux: el repositorio guarda LF
+# siempre, sin importar en qué sistema se haya editado. Sin esto, un
+# script con CRLF sube al hosting y falla con un error ilegible.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ogg binary
+*.oga binary
+*.pdf binary

@@ -1,0 +1,124 @@
+name: CI
+
+# Push a main dispara la cadena entera. Si algo falla, no se despliega.
+# El objetivo no es la ceremonia: es poder cambiar de modelo de IA un
+# martes a la noche sin miedo.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unitarios:
+    name: Unitarios (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.2 es el piso que soporta el hosting; 8.4 es la versión de
+        # desarrollo. Probar las dos evita el clásico "en mi máquina anda".
+        php: ['8.2', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_mysql, mbstring, curl
+          coverage: none
+
+      - name: Verificar sintaxis
+        run: find src public bin tests -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Tests unitarios
+        run: php tests/run.php --unit
+
+  integracion:
+    name: Integración contra MariaDB
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: budget_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: budget_test
+      DB_USER: root
+      DB_PASS: root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, mbstring, curl
+          coverage: none
+
+      # Que las migraciones corran limpias desde cero es parte de la
+      # suite: en producción no hay rollback de un CREATE TABLE a medias.
+      - name: Migraciones desde cero
+        run: php bin/migrate.php
+
+      - name: Migraciones idempotentes
+        run: |
+          php bin/migrate.php
+          php bin/migrate.php --status
+
+      - name: Tests de integración
+        run: php tests/run.php
+
+  desplegar:
+    name: Desplegar a WNPower
+    needs: [unitarios, integracion]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: produccion
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Subir por FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_DIR }}
+          # El .env de producción vive en el servidor y nunca se pisa
+          # desde el repo: es el único archivo con secretos reales.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/tests/**
+            **/docker/**
+            **/docs/**
+            docker-compose.yml
+            .env
+            .env.example
+            storage/**
+
+      # Verificación post-despliegue sin secretos: el webhook tiene que
+      # contestar 403 ante una petición sin el token. Un 500 o un 404
+      # significan que el deploy rompió el bot aunque los tests pasen.
+      - name: Verificar que el webhook sigue vivo
+        run: |
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${{ secrets.WEBHOOK_URL }}" -d '{}')
+          echo "El webhook respondió $codigo"
+          test "$codigo" = "403"

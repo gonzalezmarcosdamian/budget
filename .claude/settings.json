@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l:*)",
+      "Bash(php tests/run.php:*)",
+      "Bash(php bin/migrate.php:*)",
+      "Bash(php bin/webhook.php info)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker compose exec:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose build:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(find:*)"
+    ],
+    "ask": [
+      "Bash(docker compose down:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./storage/app.log)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "php .claude/hooks/lint-php.php"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "php .claude/hooks/tests-unit.php"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+# Secretos — NUNCA commitear
+.env
+.env.local
+*.pem
+*.key
+
+# Runtime
+/storage/*
+!/storage/.gitkeep
+/vendor/
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores
+.idea/
+.vscode/
+*.swp
+
+# Despliegue
+/.deploy/
+maintenance.flag
