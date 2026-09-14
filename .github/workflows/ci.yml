@@ -10,9 +10,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Sólo se cancelan corridas de PR. En main no, porque cancelar a mitad
+# de camino cortaría un FTP en curso y dejaría el sitio a medio publicar.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unitarios:
@@ -90,6 +92,12 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: produccion
+    # Un solo despliegue a la vez, y nunca cancelado: el firewall de
+    # WNPower corta la IP ante ráfagas, y un FTP interrumpido deja
+    # archivos a medio subir en producción.
+    concurrency:
+      group: deploy-wnpower
+      cancel-in-progress: false
     env:
       # El contexto `secrets` no está disponible en el `if` de un job,
       # así que se expone acá para poder condicionar los pasos.
@@ -133,6 +141,13 @@ jobs:
       - name: Verificar que el webhook sigue vivo
         if: env.FTP_SERVER != '' && env.WEBHOOK_URL != ''
         run: |
-          codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${{ secrets.WEBHOOK_URL }}" -d '{}')
+          # Un solo pedido, sin reintentos: el firewall de WNPower bloquea
+          # la IP ante ráfagas y sólo lo destraba una persona con captcha.
+          codigo=$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' -X POST "${{ secrets.WEBHOOK_URL }}" -d '{}')
           echo "El webhook respondió $codigo"
-          test "$codigo" = "403"
+          if [ "$codigo" = "403" ]; then
+            echo "Webhook vivo y rechazando pedidos sin secreto."
+            exit 0
+          fi
+          echo "::error::Se esperaba 403. Un 503 con página de bloqueo significa que el firewall cortó la IP: lo destraba una persona desde el navegador."
+          exit 1
