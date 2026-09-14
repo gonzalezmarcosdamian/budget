@@ -103,13 +103,13 @@ final class App
     private function router(): Router
     {
         $http = new Http();
+        $clave = $this->config->claveIa('GEMINI_API_KEY');
 
-        return new Router(
-            [
-                new GeminiProvider($this->config->claveIa('GEMINI_API_KEY'), $http, $this->reloj),
-            ],
-            $this->pdo(),
-            $this->log,
+        $proveedores = array_map(
+            fn (string $modelo): GeminiProvider => new GeminiProvider($clave, $http, $this->reloj, $modelo),
+            $this->config->modelosGemini()
         );
+
+        return new Router($proveedores, $this->pdo(), $this->log);
     }
 }

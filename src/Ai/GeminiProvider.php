@@ -18,7 +18,10 @@ use RuntimeException;
 final class GeminiProvider implements LlmProvider
 {
     private const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-    private const MODELO_POR_DEFECTO = 'gemini-2.5-flash';
+    // gemini-2.5-flash ya no se habilita a cuentas nuevas (404). Los
+    // flash grandes devuelven 503 seguido en capa gratuita; el lite
+    // responde de forma consistente, medido el 14/09/2026.
+    private const MODELO_POR_DEFECTO = 'gemini-3.5-flash-lite';
 
     public function __construct(
         private readonly string $apiKey,
@@ -31,6 +34,11 @@ final class GeminiProvider implements LlmProvider
     public function nombre(): string
     {
         return 'gemini';
+    }
+
+    public function modelo(): string
+    {
+        return $this->modelo;
     }
 
     public function disponible(): bool

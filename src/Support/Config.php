@@ -20,6 +20,8 @@ use DateTimeZone;
  */
 final class Config
 {
+    private const MODELOS_GEMINI_POR_DEFECTO = 'gemini-3.5-flash-lite';
+
     public function __construct(
         private readonly Env $env,
         public readonly string $dsn,
@@ -66,5 +68,27 @@ final class Config
     public function claveIa(string $variable): string
     {
         return $this->env->texto($variable);
+    }
+
+    /**
+     * Modelos de Gemini en orden de preferencia.
+     *
+     * La cadena de respaldo no es sólo entre proveedores: en capa
+     * gratuita los flash grandes devuelven 503 "high demand" seguido,
+     * así que un 503 en el primero tiene que bajar al siguiente modelo
+     * del mismo proveedor.
+     *
+     * @return list<string>
+     */
+    public function modelosGemini(): array
+    {
+        $crudo = $this->env->texto('GEMINI_MODELS', self::MODELOS_GEMINI_POR_DEFECTO);
+
+        $modelos = array_values(array_filter(
+            array_map(trim(...), explode(',', $crudo)),
+            static fn (string $modelo): bool => $modelo !== ''
+        ));
+
+        return $modelos === [] ? [self::MODELOS_GEMINI_POR_DEFECTO] : $modelos;
     }
 }

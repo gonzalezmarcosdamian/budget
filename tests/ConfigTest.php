@@ -71,3 +71,13 @@ prueba('el entorno del proceso pisa al archivo .env', function (): void {
         unset($_SERVER['DB_NAME']);
     }
 });
+
+prueba('la cadena de modelos de Gemini tiene un respaldo por defecto', function (): void {
+    esIgual(['gemini-3.5-flash-lite'], Config::desdeEnv(envMinimo())->modelosGemini());
+});
+
+prueba('la cadena de modelos se configura por entorno', function (): void {
+    $config = Config::desdeEnv(envMinimo(['GEMINI_MODELS' => 'lite, grande ,,pro']));
+
+    esIgual(['lite', 'grande', 'pro'], $config->modelosGemini(), 'recorta espacios y descarta vacíos');
+});

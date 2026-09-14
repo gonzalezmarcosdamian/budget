@@ -175,3 +175,53 @@ Groq lo aceptan sin transcodificar.
 
 **Consecuencias.** El pipeline de voz no necesita binarios externos. Si en el
 futuro un proveedor exigiera otro formato, queda descartado antes de evaluarlo.
+
+---
+
+## 13. La cadena de respaldo también corre entre modelos del mismo proveedor
+
+**Contexto.** Medido el 14/09/2026 contra la API real con una clave de capa
+gratuita recién creada:
+
+| Modelo | Resultado |
+|---|---|
+| `gemini-2.5-flash` | `404` — "no longer available to new users" |
+| `gemini-3.8-flash`, `gemini-3.5-flash` | `503` — "currently experiencing high demand" |
+| `gemini-3.5-flash-lite` | Responde bien, 1 a 11 segundos |
+
+**Decisión.** `GEMINI_MODELS` define una lista ordenada y `App` instancia un
+proveedor por modelo. Un 503 en el primero baja al siguiente sin que el usuario
+se entere. El default es `gemini-3.5-flash-lite`.
+
+**Consecuencias.** La cadena de respaldo, que estaba pensada entre proveedores
+distintos, sirve igual entre modelos del mismo: en capa gratuita la saturación es
+más frecuente que la caída de un proveedor entero. `ai_calls` registra el modelo
+concreto de cada intento, así que cuál conviene poner primero se decide con datos.
+
+**Lo que esto enseña.** El modelo por defecto que escribí de memoria estaba
+desactualizado y devolvía 404. Ningún test lo habría detectado sin una clave
+real: por eso la Definition of Done exige pasar por `evaluador-extraccion` cuando
+se toca un proveedor.
+
+---
+
+## 14. Un solo pedido contra producción, sin reintentos
+
+**Contexto.** El firewall de WNPower bloquea la IP ante ráfagas de pedidos y
+devuelve una página de bloqueo con captcha que **sólo destraba una persona**. Con
+la IP bloqueada no se verifica ni se despliega, y **un FTP en curso se corta a la
+mitad**, dejando archivos incompletos en producción. Ocurrido tres veces en otro
+proyecto sobre el mismo hosting.
+
+**Decisión.**
+
+- `cancel-in-progress` sólo en pull requests; en `main` nunca, porque cancelar
+  cortaría un FTP vivo.
+- El job de despliegue tiene su propio grupo de concurrencia sin cancelación: dos
+  push seguidos se encolan en vez de pisarse.
+- La verificación post-despliegue hace **un** pedido con timeout, sin reintentos,
+  y si no recibe 403 dice explícitamente que un bloqueo lo destraba una persona.
+
+**Consecuencias.** El despliegue es más lento ante pushes seguidos y a cambio no
+puede dejar el sitio a medio publicar. Vale también para cualquier script de
+verificación que se agregue después: contra producción, una sola pasada.

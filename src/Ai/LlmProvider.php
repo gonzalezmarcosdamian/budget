@@ -19,6 +19,9 @@ interface LlmProvider
 
     public function nombre(): string;
 
+    /** Modelo concreto en uso. Se registra en ai_calls para poder comparar. */
+    public function modelo(): string;
+
     public function disponible(): bool;
 
     public function soporta(string $tarea): bool;

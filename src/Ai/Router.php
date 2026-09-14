@@ -86,6 +86,7 @@ final class Router
                 $this->registrar($userId, $proveedor, $tarea, $inicio, false, $e->getMessage());
                 $this->log->advertencia('proveedor de IA falló, bajando al siguiente', [
                     'proveedor' => $proveedor->nombre(),
+                    'modelo' => $proveedor->modelo(),
                     'tarea' => $tarea,
                 ]);
             }
@@ -110,7 +111,7 @@ final class Router
             $sentencia->execute([
                 $userId,
                 $proveedor->nombre(),
-                '',
+                $proveedor->modelo(),
                 $tarea,
                 (int) round((microtime(true) - $inicio) * 1000),
                 $exito ? 1 : 0,
