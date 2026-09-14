@@ -104,9 +104,13 @@ prueba('ignora entradas que no son objetos', function (): void {
 prueba('las categorías del prompt existen todas en las migraciones', function (): void {
     // Una categoría que el modelo puede elegir pero que no está en la
     // base no clasifica nada: se descarta en silencio.
-    $sql = file_get_contents(dirname(__DIR__) . '/migrations/001_core.sql')
-        . file_get_contents(dirname(__DIR__) . '/migrations/005_categoria_salidas.sql')
-        . file_get_contents(dirname(__DIR__) . '/migrations/008_taxonomia.sql');
+    // Lee todas las migraciones y no una lista fija: agregar una
+    // migración no puede romper este test.
+    $sql = '';
+
+    foreach (glob(dirname(__DIR__) . '/migrations/*.sql') ?: [] as $archivo) {
+        $sql .= file_get_contents($archivo);
+    }
 
     foreach (Budget\Ai\Prompt::CATEGORIAS as $categoria) {
         afirmar(
