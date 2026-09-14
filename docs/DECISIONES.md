@@ -321,13 +321,38 @@ cron          1
 ```
 
 **Lo que significa.** Node.js Selector necesita Phusion Passenger para levantar
-un proceso por usuario y hacer de proxy desde Apache; por eso los dos están en
-cero, son la misma dependencia. Y se habilita en **WHM → LVE Manager → Options**,
-que es nivel *root*: un revendedor sólo puede exponer lo que el proveedor ya
-habilitó para su tier. En los planes de WNPower, Node.js aparece recién en
-**Cloud Hosting**, no en el compartido clásico.
+un proceso por usuario y hacer de proxy desde Apache: por eso los dos aparecían
+en cero, son la misma dependencia.
 
-**Consecuencia.** Un bot en Node sobre esta cuenta no habría arrancado, ni con
-webhook ni con polling. La decisión de PHP no costó nada y era la única que
-funcionaba. Lo que sí cambia: `ssh 1` y `cron 1` confirman que el despliegue y
-las migraciones se pueden correr y verificar de verdad en el servidor.
+**Corrección del mismo día.** Se afirmó acá que habilitarlo era nivel *root* y
+que un revendedor no podía. **Era falso.** El dueño de la cuenta creó una lista
+de funciones propia (`elmundo5_Full`) y ahí los tres están habilitados:
+
+```
+lvenodejssel  1    (Node.js Selector)
+passengerapps 1    (Application Manager / Passenger)
+lvepythonsel  1    (Python Selector)
+ssh           1
+cron          1
+```
+
+La lista `elmundo5_Full` la usa el paquete `elmundo5_Paquetessh`, que además
+tiene `HASSHELL 1` y sin tope de bases ni de subdominios. O sea que el servidor
+sí tenía los componentes y el revendedor sí podía exponerlos: lo que faltaba era
+una lista de funciones que los incluyera, no un permiso de WNPower.
+
+**Lo que sigue en pie.** La conclusión práctica no cambia, pero el motivo sí: no
+hace falta contratar un plan Cloud porque Node ya está disponible sin costo
+adicional, no porque sea imposible.
+
+**Consecuencia para este proyecto.** PHP sigue siendo la elección correcta, pero
+ahora por sus propios méritos y no por descarte: consumo cero en reposo, sin
+proceso que supervisar y sin Passenger de por medio. Y `ssh 1` confirma que el
+despliegue y las migraciones se pueden correr y verificar de verdad en el
+servidor.
+
+**Lección de método.** La afirmación "eso no se puede habilitar" salió de
+documentación general, no de consultar la instalación concreta. La API de WHM
+estaba a un pedido de distancia y decía lo contrario. Ante una pregunta de
+capacidades, primero se le pregunta al sistema; la documentación es el respaldo,
+no la fuente.
