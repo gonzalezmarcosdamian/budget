@@ -74,16 +74,35 @@ que el webhook siga contestando.
 Secretos necesarios en el repo: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`,
 `FTP_DIR`, `WEBHOOK_URL`.
 
-En el servidor, una sola vez:
+### Puesta en marcha, una sola vez
+
+El bot vive en `bot.marcosdamiangonzalez.ar`. Esa URL no la ve nadie: los
+usuarios sólo ven el bot en Telegram. Telegram necesita una URL HTTPS pública a
+la que golpear, y ésa es.
+
+1. **DNS** — registro A del subdominio hacia la IP de WNPower:
+   `vercel dns add marcosdamiangonzalez.ar bot A <IP-de-WNPower>`
+2. **cPanel** — crear el subdominio con document root en `public/` y habilitar
+   el certificado gratuito. Todo lo demás (`src/`, `.env`, `migrations/`) queda
+   así fuera del alcance de cualquier request.
+3. **Base y webhook**:
 
 ```bash
 php bin/migrate.php
-php bin/webhook.php set https://tudominio.com.ar/webhook.php
+php bin/webhook.php set https://bot.marcosdamiangonzalez.ar/webhook.php
 php bin/webhook.php info
 ```
 
-El document root del dominio tiene que apuntar a `public/`. Todo lo demás —
-`src/`, `.env`, `migrations/` — queda fuera del alcance de cualquier request.
+4. **Cron horario** para purgar y vigilar que el bot siga recibiendo mensajes:
+
+```
+0 * * * * /usr/local/bin/php /home/USUARIO/budget/bin/cron.php --quiet
+```
+
+El cron avisa por Telegram a `OWNER_CHAT_ID` si el webhook se cae. Importa más
+de lo que parece: si el firewall del hosting llegara a bloquear a Telegram, el
+bot deja de recibir mensajes **en silencio** — sin error, sin log, simplemente
+nadie escribe.
 
 ## Arquitectura
 

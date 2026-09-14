@@ -64,6 +64,18 @@ final class Config
         return $this->env->requerido('TELEGRAM_WEBHOOK_SECRET');
     }
 
+    /**
+     * A quién avisarle cuando algo se rompe. 0 = sin configurar.
+     *
+     * Es el chat_id de Telegram del dueño del bot, no un mail: si el bot
+     * dejó de andar, el aviso tiene que llegar por un canal que no
+     * dependa de que el bot ande.
+     */
+    public function chatIdDelDueno(): int
+    {
+        return $this->env->entero('OWNER_CHAT_ID', 0);
+    }
+
     /** Cadena vacía cuando no está configurada: el proveedor se saltea solo. */
     public function claveIa(string $variable): string
     {

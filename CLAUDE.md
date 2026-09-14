@@ -44,6 +44,7 @@ el gasto en silencio.
 
 ```bash
 php tests/run.php --unit          # unitarios, sin base (milisegundos)
+php bin/cron.php                  # purga + chequeo de salud del webhook
 docker compose up -d --build      # entorno de pre-producción
 docker compose exec app php bin/migrate.php
 docker compose exec app php tests/run.php   # unitarios + integración
@@ -84,3 +85,9 @@ Están en `.claude/agents/`. Ver `docs/WORKFLOW.md` para cuándo usar cada uno.
 - Jerga argentina que el parser entiende: `luca` = mil, `palo` = millón, `25k`.
 - No existe open banking para cuentas personales en Argentina. La integración
   bancaria va por parseo de mails de aviso, nunca por scraping de homebanking.
+- El bot vive en `bot.marcosdamiangonzalez.ar` (subdominio del dominio personal,
+  DNS en Vercel, hosting en WNPower). Nadie ve esa URL: es sólo la dirección
+  donde Telegram entrega los mensajes.
+- **Contra producción, una sola pasada.** El firewall de WNPower bloquea la IP
+  ante ráfagas y sólo lo destraba una persona con un captcha. Nada de `curl` en
+  ráfaga ni reintentos automáticos.

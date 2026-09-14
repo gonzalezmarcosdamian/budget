@@ -225,3 +225,50 @@ proyecto sobre el mismo hosting.
 **Consecuencias.** El despliegue es más lento ante pushes seguidos y a cambio no
 puede dejar el sitio a medio publicar. Vale también para cualquier script de
 verificación que se agregue después: contra producción, una sola pasada.
+
+---
+
+## 15. Subdominio del dominio personal, no un dominio nuevo
+
+**Contexto.** Un webhook de Telegram exige una URL HTTPS pública. No hay forma de
+evitarlo: la alternativa, *polling*, necesita un proceso vivo 24/7 y está
+descartada por la decisión 1. Pero esa URL **no la ve ningún usuario**: la gente
+sólo ve el bot dentro de Telegram.
+
+**Decisión.** `bot.marcosdamiangonzalez.ar` — subdominio del dominio personal,
+con DNS en Vercel (donde ya está el apex) y un registro A hacia la IP de WNPower.
+
+**Alternativas descartadas.**
+
+- *Comprar un dominio nuevo*: gasto anual para una URL que nadie va a leer.
+- *Subdominio de `gargonatural.com.ar`*: técnicamente más simple, porque DNS y
+  hosting quedan en el mismo panel. Descartado porque ata un proyecto personal a
+  un activo de negocio: si ese dominio se mueve o se vende, el bot se cae con él.
+- *Subcarpeta de un sitio existente*: no requiere DNS, pero mezcla el bot con el
+  document root de un sitio en producción, y un despliegue podría pisar al otro.
+
+**Consecuencias.** DNS y hosting quedan en proveedores distintos, así que el
+certificado no se emite hasta que el registro A propaga. Es un paso más, una sola
+vez.
+
+---
+
+## 16. El bot puede morirse en silencio, así que hay que vigilarlo
+
+**Contexto.** Si el firewall de WNPower bloqueara a Telegram, o venciera el
+certificado, o un despliegue moviera `webhook.php`, el bot deja de recibir
+mensajes **sin producir un solo error en el servidor**. No hay log que mirar:
+simplemente nadie escribe, y uno se entera días después.
+
+**Decisión.** Un cron horario (`bin/cron.php`) consulta `getWebhookInfo` y avisa
+por Telegram a `OWNER_CHAT_ID` cuando hay `last_error_message` o demasiados
+updates encolados. `HealthCheck` traduce el error de Telegram a la causa más
+probable en este hosting, porque un mensaje genérico no sirve de madrugada.
+
+**Por qué el aviso va por Telegram.** El envío sale del servidor **hacia**
+Telegram, que es la dirección contraria a la que está rota cuando Telegram no
+puede entregarnos nada. Un mail dependería de otra pieza más.
+
+**Consecuencias.** El mismo cron purga `updates_seen`. Es la única tarea
+programada del proyecto, y una corrida por hora es suficiente: menos sería
+enterarse tarde, más sería golpear al hosting sin necesidad.
