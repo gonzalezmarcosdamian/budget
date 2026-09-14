@@ -90,10 +90,23 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: produccion
+    env:
+      # El contexto `secrets` no está disponible en el `if` de un job,
+      # así que se expone acá para poder condicionar los pasos.
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
 
+      # Sin credenciales cargadas el despliegue se saltea en vez de
+      # fallar: un CI permanentemente en rojo enseña a ignorarlo.
+      - name: Avisar que falta configurar el despliegue
+        if: env.FTP_SERVER == ''
+        run: |
+          echo "::notice::Despliegue salteado: falta cargar los secretos FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_DIR y WEBHOOK_URL."
+
       - name: Subir por FTP
+        if: env.FTP_SERVER != ''
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -118,6 +131,7 @@ jobs:
       # contestar 403 ante una petición sin el token. Un 500 o un 404
       # significan que el deploy rompió el bot aunque los tests pasen.
       - name: Verificar que el webhook sigue vivo
+        if: env.FTP_SERVER != '' && env.WEBHOOK_URL != ''
         run: |
           codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${{ secrets.WEBHOOK_URL }}" -d '{}')
           echo "El webhook respondió $codigo"
