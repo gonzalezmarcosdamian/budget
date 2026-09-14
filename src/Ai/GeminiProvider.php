@@ -23,6 +23,9 @@ final class GeminiProvider implements LlmProvider
     // responde de forma consistente, medido el 14/09/2026.
     private const MODELO_POR_DEFECTO = 'gemini-3.5-flash-lite';
 
+    /** Un resumen mensual rara vez pasa los doscientos consumos. */
+    private const MAXIMO_EN_UN_RESUMEN = 200;
+
     public function __construct(
         private readonly string $apiKey,
         private readonly Http $http,
@@ -48,7 +51,11 @@ final class GeminiProvider implements LlmProvider
 
     public function soporta(string $tarea): bool
     {
-        return in_array($tarea, [self::TAREA_TEXTO, self::TAREA_IMAGEN, self::TAREA_AUDIO], true);
+        return in_array(
+            $tarea,
+            [self::TAREA_TEXTO, self::TAREA_IMAGEN, self::TAREA_AUDIO, self::TAREA_DOCUMENTO],
+            true
+        );
     }
 
     /** @return list<Extraction> */
@@ -69,6 +76,18 @@ final class GeminiProvider implements LlmProvider
     }
 
     /** @return list<Extraction> */
+    public function extraerDeResumen(string $binario, string $mimeType): array
+    {
+        // Gemini lee PDFs de forma nativa: no hace falta ninguna librería
+        // de parseo, que es lo que permite sostener la regla de cero
+        // dependencias de runtime.
+        return $this->generar([
+            ['text' => Prompt::paraResumen($this->hoy())],
+            ['inline_data' => ['mime_type' => $mimeType, 'data' => base64_encode($binario)]],
+        ], self::MAXIMO_EN_UN_RESUMEN);
+    }
+
+    /** @return list<Extraction> */
     public function extraerDeAudio(string $binario, string $mimeType): array
     {
         return $this->generar([
@@ -81,7 +100,7 @@ final class GeminiProvider implements LlmProvider
      * @param list<array<string,mixed>> $partes
      * @return list<Extraction>
      */
-    private function generar(array $partes): array
+    private function generar(array $partes, ?int $maximo = null): array
     {
         if (!$this->disponible()) {
             throw new RuntimeException('Falta GEMINI_API_KEY');
@@ -111,7 +130,7 @@ final class GeminiProvider implements LlmProvider
             throw new RuntimeException('Gemini devolvió algo que no es JSON');
         }
 
-        return Extraction::variasDesdeJson($datos, $this->nombre(), $this->modelo);
+        return Extraction::variasDesdeJson($datos, $this->nombre(), $this->modelo, maximo: $maximo);
     }
 
     /** @param array<string,mixed> $respuesta */

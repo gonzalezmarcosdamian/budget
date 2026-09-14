@@ -21,6 +21,11 @@ final class ExpenseCard
     public const ACCION_ELEGIR_CATEGORIA = 'cat';
     public const ACCION_FIJAR_CATEGORIA = 'set';
 
+    /** Acciones sobre un lote entero, para las importaciones de resumen. */
+    public const ACCION_LOTE_CONFIRMAR = 'lok';
+    public const ACCION_LOTE_DESCARTAR = 'lno';
+    public const ACCION_LOTE_DETALLE = 'lver';
+
     private const CATEGORIAS_POR_FILA = 2;
 
     public static function texto(Draft $borrador, string $emoji = ''): string
@@ -115,6 +120,79 @@ final class ExpenseCard
             'expenseId' => $expenseId,
             'valor' => $valor,
         ];
+    }
+
+    /**
+     * La tarjeta de una importación de resumen.
+     *
+     * Un resumen trae decenas de consumos: mandar una tarjeta por cada
+     * uno vuelve el chat inusable. Se confirma el lote entero y se revisa
+     * el detalle sólo si algo no cierra.
+     */
+    public static function textoDeLote(
+        int $cantidad,
+        \Budget\Support\Money $total,
+        int $salteados,
+        string $desde,
+        string $hasta,
+    ): string {
+        $lineas = [
+            '🧾 <b>Resumen de tarjeta</b>',
+            '',
+            sprintf('<b>%d consumos</b> — <b>%s</b>', $cantidad, self::escapar($total->formatear())),
+        ];
+
+        if ($desde !== '' && $hasta !== '') {
+            $lineas[] = '📅 ' . self::escapar($desde) . ' al ' . self::escapar($hasta);
+        }
+
+        if ($salteados > 0) {
+            $lineas[] = '';
+            $lineas[] = sprintf(
+                '<i>%d ya los tenías cargados. Los salteé para no duplicarlos.</i>',
+                $salteados
+            );
+        }
+
+        return implode("\n", $lineas);
+    }
+
+    public static function tecladoDeLote(string $lote, int $cantidad): Keyboard
+    {
+        return Keyboard::nueva()
+            ->fila(['✓ Guardar los ' . $cantidad => self::ACCION_LOTE_CONFIRMAR . ':' . $lote])
+            ->fila([
+                '👀 Ver detalle' => self::ACCION_LOTE_DETALLE . ':' . $lote,
+                '✕ Descartar' => self::ACCION_LOTE_DESCARTAR . ':' . $lote,
+            ]);
+    }
+
+    /**
+     * Los callbacks de lote llevan un token de texto y no un id numérico,
+     * así que no pasan por decodificar().
+     *
+     * @return array{accion:string, lote:string}|null
+     */
+    public static function decodificarLote(string $datos): ?array
+    {
+        $partes = explode(':', $datos, 2);
+
+        if (count($partes) !== 2 || preg_match('/^[0-9a-f]{12}$/', $partes[1]) !== 1) {
+            return null;
+        }
+
+        return ['accion' => $partes[0], 'lote' => $partes[1]];
+    }
+
+    public static function esAccionDeLote(string $datos): bool
+    {
+        $accion = explode(':', $datos, 2)[0];
+
+        return in_array(
+            $accion,
+            [self::ACCION_LOTE_CONFIRMAR, self::ACCION_LOTE_DESCARTAR, self::ACCION_LOTE_DETALLE],
+            true
+        );
     }
 
     public static function escapar(string $texto): string

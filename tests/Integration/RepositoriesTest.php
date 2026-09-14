@@ -168,3 +168,87 @@ prueba('[db] el desglose por categoría suma al total', function (): void {
     esIgual('Supermercado', $desglose[0]['categoria']);
     esIgual('15000.00', $desglose[0]['total']->aDecimal());
 });
+
+prueba('[db] detecta un gasto que ya existe con misma fecha e importe', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario();
+    $dia = new DateTimeImmutable('2026-09-14');
+
+    $id = $gastos->guardarBorrador($ana, borradorDe(18_450, 'Coto'), null);
+    $gastos->confirmar($ana, $id);
+
+    // Importar el resumen de la tarjeta no puede volver a cargar lo que
+    // el usuario ya anotó a mano durante el mes.
+    afirmar($gastos->yaExiste($ana, $dia, '18450.00'), 'mismo dia y monto');
+    afirmar(!$gastos->yaExiste($ana, $dia, '18451.00'), 'otro monto');
+    afirmar(!$gastos->yaExiste($ana, new DateTimeImmutable('2026-09-13'), '18450.00'), 'otro dia');
+});
+
+prueba('[db] un borrador sin confirmar no cuenta como duplicado', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario();
+
+    $gastos->guardarBorrador($ana, borradorDe(5_000, 'Kiosco'), null);
+
+    afirmar(!$gastos->yaExiste($ana, new DateTimeImmutable('2026-09-14'), '5000.00'), 'sin confirmar no duplica');
+});
+
+prueba('[db] el duplicado no se detecta entre usuarios distintos', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario('Ana');
+    $beto = nuevoUsuario('Beto');
+
+    $id = $gastos->guardarBorrador($ana, borradorDe(9_000, 'Nafta'), null);
+    $gastos->confirmar($ana, $id);
+
+    afirmar(!$gastos->yaExiste($beto, new DateTimeImmutable('2026-09-14'), '9000.00'), 'el gasto de Ana no es duplicado de Beto');
+});
+
+prueba('[db] un lote se confirma entero de una', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario();
+    $lote = 'ABC123456789';
+
+    foreach ([1_000, 2_000, 3_000] as $pesos) {
+        $gastos->guardarBorrador($ana, borradorDe($pesos, 'Consumo'), null, $lote);
+    }
+
+    $resumen = $gastos->resumenDeLote($ana, $lote);
+    esIgual(3, $resumen['cantidad']);
+    esIgual('6000.00', $resumen['total']->aDecimal());
+
+    esIgual(3, $gastos->confirmarLote($ana, $lote), 'confirma los tres');
+    esIgual(0, $gastos->confirmarLote($ana, $lote), 'el segundo toque no hace nada');
+});
+
+prueba('[db] un lote se descarta entero cuando el PDF se leyó mal', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario();
+    $lote = 'XYZ987654321';
+
+    foreach ([500, 700] as $pesos) {
+        $gastos->guardarBorrador($ana, borradorDe($pesos, 'Consumo'), null, $lote);
+    }
+
+    esIgual(2, $gastos->descartarLote($ana, $lote));
+    esIgual(0, $gastos->resumenDeLote($ana, $lote)['cantidad'], 'ya no queda nada pendiente');
+});
+
+prueba('[db] un usuario no puede confirmar el lote de otro', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario('Ana');
+    $beto = nuevoUsuario('Beto');
+    $lote = 'LOTEDEANA123';
+
+    $gastos->guardarBorrador($ana, borradorDe(4_000, 'Consumo'), null, $lote);
+
+    esIgual(0, $gastos->confirmarLote($beto, $lote), 'ajeno no confirma');
+    esIgual(0, $gastos->resumenDeLote($beto, $lote)['cantidad'], 'ni lo ve');
+    esIgual(1, $gastos->confirmarLote($ana, $lote), 'la dueña sí');
+});

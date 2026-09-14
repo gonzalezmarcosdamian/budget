@@ -16,6 +16,7 @@ interface LlmProvider
     public const TAREA_TEXTO = 'texto';
     public const TAREA_IMAGEN = 'imagen';
     public const TAREA_AUDIO = 'audio';
+    public const TAREA_DOCUMENTO = 'documento';
 
     public function nombre(): string;
 
@@ -43,4 +44,11 @@ interface LlmProvider
 
     /** @return list<Extraction> */
     public function extraerDeAudio(string $binario, string $mimeType): array;
+
+    /**
+     * Un resumen de tarjeta: decenas de consumos en un PDF.
+     *
+     * @return list<Extraction>
+     */
+    public function extraerDeResumen(string $binario, string $mimeType): array;
 }

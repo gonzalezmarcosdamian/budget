@@ -28,6 +28,7 @@ final class Update
         public readonly string $nombre,
         public readonly string $texto,
         public readonly string $fileId,
+        public readonly string $mimeType,
         public readonly string $callbackData,
         public readonly string $callbackQueryId,
     ) {
@@ -94,6 +95,7 @@ final class Update
             nombre: self::nombreDe($desde),
             texto: '',
             fileId: '',
+            mimeType: '',
             callbackData: (string) ($callback['data'] ?? ''),
             callbackQueryId: (string) ($callback['id'] ?? ''),
         );
@@ -105,7 +107,7 @@ final class Update
         $chat = is_array($mensaje['chat'] ?? null) ? $mensaje['chat'] : [];
         $desde = is_array($mensaje['from'] ?? null) ? $mensaje['from'] : [];
 
-        [$tipo, $fileId, $texto] = self::clasificar($mensaje);
+        [$tipo, $fileId, $texto, $mimeType] = self::clasificar($mensaje);
 
         return new self(
             updateId: $updateId,
@@ -115,6 +117,7 @@ final class Update
             nombre: self::nombreDe($desde),
             texto: $texto,
             fileId: $fileId,
+            mimeType: $mimeType,
             callbackData: '',
             callbackQueryId: '',
         );
@@ -122,12 +125,12 @@ final class Update
 
     /**
      * @param array<string,mixed> $mensaje
-     * @return array{0:string, 1:string, 2:string}
+     * @return array{0:string, 1:string, 2:string, 3:string}
      */
     private static function clasificar(array $mensaje): array
     {
         if (isset($mensaje['text']) && is_string($mensaje['text'])) {
-            return [self::TIPO_TEXTO, '', trim($mensaje['text'])];
+            return [self::TIPO_TEXTO, '', trim($mensaje['text']), ''];
         }
 
         // Telegram manda varias resoluciones; la última es la más grande.
@@ -135,20 +138,36 @@ final class Update
             $mayor = end($mensaje['photo']);
             $fileId = is_array($mayor) ? (string) ($mayor['file_id'] ?? '') : '';
 
-            return [self::TIPO_FOTO, $fileId, self::epigrafe($mensaje)];
+            return [self::TIPO_FOTO, $fileId, self::epigrafe($mensaje), 'image/jpeg'];
         }
 
         foreach (['voice', 'audio', 'video_note'] as $clave) {
             if (isset($mensaje[$clave]) && is_array($mensaje[$clave])) {
-                return [self::TIPO_VOZ, (string) ($mensaje[$clave]['file_id'] ?? ''), self::epigrafe($mensaje)];
+                $medio = $mensaje[$clave];
+
+                return [
+                    self::TIPO_VOZ,
+                    (string) ($medio['file_id'] ?? ''),
+                    self::epigrafe($mensaje),
+                    (string) ($medio['mime_type'] ?? 'audio/ogg'),
+                ];
             }
         }
 
+        // Un PDF adjunto suele ser el resumen de la tarjeta: ahí está el
+        // mes entero de consumos, no un gasto suelto.
         if (isset($mensaje['document']) && is_array($mensaje['document'])) {
-            return [self::TIPO_DOCUMENTO, (string) ($mensaje['document']['file_id'] ?? ''), self::epigrafe($mensaje)];
+            $doc = $mensaje['document'];
+
+            return [
+                self::TIPO_DOCUMENTO,
+                (string) ($doc['file_id'] ?? ''),
+                self::epigrafe($mensaje),
+                (string) ($doc['mime_type'] ?? ''),
+            ];
         }
 
-        return [self::TIPO_IGNORADO, '', ''];
+        return [self::TIPO_IGNORADO, '', '', ''];
     }
 
     /** @param array<string,mixed> $mensaje */

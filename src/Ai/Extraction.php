@@ -81,8 +81,10 @@ final class Extraction
         array $datos,
         string $proveedor,
         string $modelo,
-        string $monedaPorDefecto = Money::MONEDA_POR_DEFECTO
+        string $monedaPorDefecto = Money::MONEDA_POR_DEFECTO,
+        ?int $maximo = null
     ): array {
+        $tope = $maximo ?? self::MAXIMO_POR_MENSAJE;
         $crudos = $datos['gastos'] ?? null;
 
         if (!is_array($crudos)) {
@@ -102,7 +104,7 @@ final class Extraction
                 $extracciones[] = $una;
             }
 
-            if (count($extracciones) >= self::MAXIMO_POR_MENSAJE) {
+            if (count($extracciones) >= $tope) {
                 break;
             }
         }

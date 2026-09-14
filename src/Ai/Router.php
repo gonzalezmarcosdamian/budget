@@ -59,6 +59,16 @@ final class Router
     }
 
     /** @return list<Extraction> */
+    public function resumen(int $userId, string $binario, string $mimeType): array
+    {
+        return $this->intentar(
+            $userId,
+            LlmProvider::TAREA_DOCUMENTO,
+            static fn (LlmProvider $p): array => $p->extraerDeResumen($binario, $mimeType)
+        );
+    }
+
+    /** @return list<Extraction> */
     public function audio(int $userId, string $binario, string $mimeType): array
     {
         return $this->intentar(

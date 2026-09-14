@@ -28,13 +28,17 @@ final class ExpenseRepository
     {
     }
 
-    public function guardarBorrador(int $userId, Draft $borrador, ?int $categoryId): int
+    /**
+     * El lote agrupa los gastos de una misma importación de resumen,
+     * para poder confirmarlos o descartarlos juntos.
+     */
+    public function guardarBorrador(int $userId, Draft $borrador, ?int $categoryId, ?string $lote = null): int
     {
         $sentencia = $this->pdo->prepare(
             'INSERT INTO expenses
                 (user_id, monto, moneda, monto_ars, fecha, comercio, descripcion,
-                 category_id, medio_pago, fuente, confianza, modelo, estado)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 category_id, medio_pago, fuente, confianza, modelo, estado, lote)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         $sentencia->execute([
@@ -53,9 +57,90 @@ final class ExpenseRepository
             $borrador->confianza,
             $borrador->modelo,
             self::ESTADO_BORRADOR,
+            $lote,
         ]);
 
         return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * ¿Ya hay un gasto confirmado igual ese día?
+     *
+     * Es la defensa al importar un resumen de tarjeta: lo que el usuario
+     * fue anotando a mano durante el mes vuelve a aparecer en el PDF, y
+     * cargarlo dos veces arruina el total sin que se note.
+     *
+     * Sólo cuenta contra gastos confirmados: dos borradores pendientes
+     * pueden ser dos consumos distintos por el mismo importe.
+     */
+    public function yaExiste(int $userId, DateTimeImmutable $fecha, string $montoDecimal): bool
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT 1 FROM expenses
+             WHERE user_id = ? AND estado = ? AND fecha = ? AND monto = ?
+             LIMIT 1'
+        );
+        $sentencia->execute([$userId, self::ESTADO_CONFIRMADO, $fecha->format('Y-m-d'), $montoDecimal]);
+
+        return $sentencia->fetchColumn() !== false;
+    }
+
+    /** @return int cuántos se confirmaron */
+    public function confirmarLote(int $userId, string $lote): int
+    {
+        $sentencia = $this->pdo->prepare(
+            'UPDATE expenses SET estado = ?
+             WHERE user_id = ? AND lote = ? AND estado = ?'
+        );
+        $sentencia->execute([self::ESTADO_CONFIRMADO, $userId, $lote, self::ESTADO_BORRADOR]);
+
+        return $sentencia->rowCount();
+    }
+
+    /** @return int cuántos se descartaron */
+    public function descartarLote(int $userId, string $lote): int
+    {
+        $sentencia = $this->pdo->prepare(
+            'UPDATE expenses SET estado = ?
+             WHERE user_id = ? AND lote = ? AND estado = ?'
+        );
+        $sentencia->execute([self::ESTADO_DESCARTADO, $userId, $lote, self::ESTADO_BORRADOR]);
+
+        return $sentencia->rowCount();
+    }
+
+    /** @return array{cantidad:int, total:Money} lo que queda pendiente del lote */
+    public function resumenDeLote(int $userId, string $lote): array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COUNT(*) AS cantidad, COALESCE(SUM(monto_ars), 0) AS total
+             FROM expenses
+             WHERE user_id = ? AND lote = ? AND estado = ?'
+        );
+        $sentencia->execute([$userId, $lote, self::ESTADO_BORRADOR]);
+        $fila = $sentencia->fetch();
+
+        return [
+            'cantidad' => (int) ($fila['cantidad'] ?? 0),
+            'total' => Money::deDecimal((string) ($fila['total'] ?? '0')),
+        ];
+    }
+
+    /** @return list<array<string,mixed>> los gastos pendientes de un lote */
+    public function pendientesDeLote(int $userId, string $lote, int $limite = 60): array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT e.id, e.monto, e.moneda, e.fecha, e.comercio,
+                    COALESCE(c.emoji, ?) AS emoji
+             FROM expenses e
+             LEFT JOIN categories c ON c.id = e.category_id
+             WHERE e.user_id = ? AND e.lote = ? AND e.estado = ?
+             ORDER BY e.fecha, e.id
+             LIMIT ' . max(1, min($limite, 200))
+        );
+        $sentencia->execute(['📦', $userId, $lote, self::ESTADO_BORRADOR]);
+
+        return $sentencia->fetchAll();
     }
 
     public function vincularMensaje(int $userId, int $expenseId, int $messageId): void

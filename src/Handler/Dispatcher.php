@@ -67,9 +67,11 @@ final class Dispatcher
             $update->tipo === Update::TIPO_TEXTO => $this->manejarTexto($userId, $update),
             $update->tipo === Update::TIPO_FOTO => $this->manejarImagen($userId, $update),
             $update->tipo === Update::TIPO_VOZ => $this->manejarAudio($userId, $update),
+            $update->tipo === Update::TIPO_DOCUMENTO => $this->manejarResumen($userId, $update),
             default => $this->telegram->enviarMensaje(
                 $update->chatId,
-                'Todavía no sé leer eso. Mandame texto, una foto del ticket o un audio.'
+                'Todavía no sé leer eso. Mandame texto, una foto del ticket, un audio '
+                . 'o el PDF del resumen de la tarjeta.'
             ),
         };
     }
@@ -159,6 +161,119 @@ final class Dispatcher
             'audio/ogg',
             Draft::FUENTE_VOZ,
             fn (string $binario, string $mime): mixed => $this->ia->audio($userId, $binario, $mime)
+        );
+    }
+
+    /**
+     * Un PDF adjunto es el resumen de la tarjeta: trae el mes entero.
+     *
+     * No pasa por desdeArchivo() porque el resultado se trata distinto:
+     * decenas de consumos que se confirman en bloque, no uno por uno.
+     */
+    private function manejarResumen(int $userId, Update $update): void
+    {
+        if (!str_contains($update->mimeType, 'pdf')) {
+            $this->telegram->enviarMensaje(
+                $update->chatId,
+                'Por ahora sólo sé leer el resumen de tarjeta en PDF.'
+            );
+
+            return;
+        }
+
+        if (!$this->puedeUsarIa($userId, $update->chatId)) {
+            return;
+        }
+
+        $this->telegram->enviarMensaje(
+            $update->chatId,
+            '📄 Leyendo el resumen. Puede tardar un minuto.'
+        );
+
+        try {
+            $binario = $this->telegram->descargarArchivo($update->fileId);
+            $extracciones = $this->ia->resumen($userId, $binario, 'application/pdf');
+        } catch (\Throwable $e) {
+            $this->log->excepcion($e, 'lectura de resumen');
+            $this->telegram->enviarMensaje(
+                $update->chatId,
+                'No pude leer ese archivo. Si pesa mucho, probá con el resumen de un solo mes.'
+            );
+
+            return;
+        }
+
+        if ($extracciones === []) {
+            // La causa más común, y la que el usuario puede resolver: los
+            // resúmenes argentinos suelen venir cifrados con el DNI.
+            $this->telegram->enviarMensaje(
+                $update->chatId,
+                "No encontré consumos en ese PDF.\n\n"
+                . 'Si está protegido con contraseña, abrilo, guardalo sin contraseña y mandámelo de nuevo.'
+            );
+
+            return;
+        }
+
+        $this->importarLote($userId, $update->chatId, $extracciones);
+    }
+
+    /**
+     * Guarda los consumos del resumen como un lote y propone confirmarlo
+     * entero. Los que el usuario ya había cargado a mano se saltean: un
+     * duplicado arruina el total sin que se note.
+     *
+     * @param list<Extraction> $extracciones
+     */
+    private function importarLote(int $userId, int $chatId, array $extracciones): void
+    {
+        $lote = bin2hex(random_bytes(6));
+        $ahora = $this->reloj->ahora();
+        $guardados = 0;
+        $salteados = 0;
+        $fechas = [];
+
+        foreach ($extracciones as $extraccion) {
+            $borrador = $extraccion->aBorrador(Draft::FUENTE_API, $ahora);
+
+            if ($this->gastos->yaExiste($userId, $borrador->fecha, $borrador->monto->aDecimal())) {
+                $salteados++;
+
+                continue;
+            }
+
+            $this->gastos->guardarBorrador(
+                $userId,
+                $borrador,
+                $this->resolverCategoria($userId, $borrador),
+                $lote
+            );
+
+            $fechas[] = $borrador->fecha->format('d/m');
+            $guardados++;
+        }
+
+        if ($guardados === 0) {
+            $this->telegram->enviarMensaje(
+                $chatId,
+                sprintf('Ese resumen no trae nada nuevo: los %d consumos ya estaban cargados.', $salteados)
+            );
+
+            return;
+        }
+
+        $resumen = $this->gastos->resumenDeLote($userId, $lote);
+
+        $this->telegram->enviarMensaje(
+            $chatId,
+            ExpenseCard::textoDeLote(
+                $resumen['cantidad'],
+                $resumen['total'],
+                $salteados,
+                $fechas === [] ? '' : (string) reset($fechas),
+                $fechas === [] ? '' : (string) end($fechas)
+            ),
+            ExpenseCard::tecladoDeLote($lote, $resumen['cantidad'])
         );
     }
 
@@ -293,6 +408,12 @@ final class Dispatcher
 
     private function manejarCallback(int $userId, Update $update): void
     {
+        if (ExpenseCard::esAccionDeLote($update->callbackData)) {
+            $this->manejarCallbackDeLote($userId, $update);
+
+            return;
+        }
+
         $accion = ExpenseCard::decodificar($update->callbackData);
 
         if ($accion === null) {
@@ -308,6 +429,104 @@ final class Dispatcher
             ExpenseCard::ACCION_FIJAR_CATEGORIA => $this->fijarCategoria($userId, $update, $accion),
             default => $this->telegram->responderCallback($update->callbackQueryId),
         };
+    }
+
+    private function manejarCallbackDeLote(int $userId, Update $update): void
+    {
+        $accion = ExpenseCard::decodificarLote($update->callbackData);
+
+        if ($accion === null) {
+            $this->telegram->responderCallback($update->callbackQueryId);
+
+            return;
+        }
+
+        $lote = $accion['lote'];
+
+        match ($accion['accion']) {
+            ExpenseCard::ACCION_LOTE_CONFIRMAR => $this->confirmarLote($userId, $update, $lote),
+            ExpenseCard::ACCION_LOTE_DESCARTAR => $this->descartarLote($userId, $update, $lote),
+            ExpenseCard::ACCION_LOTE_DETALLE => $this->mostrarLote($userId, $update, $lote),
+            default => $this->telegram->responderCallback($update->callbackQueryId),
+        };
+    }
+
+    private function confirmarLote(int $userId, Update $update, string $lote): void
+    {
+        $resumen = $this->gastos->resumenDeLote($userId, $lote);
+        $cuantos = $this->gastos->confirmarLote($userId, $lote);
+
+        $this->telegram->responderCallback(
+            $update->callbackQueryId,
+            $cuantos > 0 ? "Guardados {$cuantos}" : 'Ya estaba resuelto'
+        );
+
+        if ($cuantos === 0) {
+            return;
+        }
+
+        $this->telegram->editarMensaje(
+            $update->chatId,
+            $update->messageId,
+            sprintf(
+                "✅ <b>Resumen importado</b>\n\n%d consumos — <b>%s</b>",
+                $cuantos,
+                ExpenseCard::escapar($resumen['total']->formatear())
+            )
+        );
+    }
+
+    private function descartarLote(int $userId, Update $update, string $lote): void
+    {
+        $cuantos = $this->gastos->descartarLote($userId, $lote);
+
+        $this->telegram->responderCallback($update->callbackQueryId, 'Descartado');
+        $this->telegram->editarMensaje(
+            $update->chatId,
+            $update->messageId,
+            sprintf('🗑 <i>Importación descartada: %d consumos.</i>', $cuantos)
+        );
+    }
+
+    /**
+     * El detalle va como texto y no como tarjetas: cuarenta tarjetas son
+     * cuarenta mensajes, y el chat queda inutilizable.
+     */
+    private function mostrarLote(int $userId, Update $update, string $lote): void
+    {
+        $this->telegram->responderCallback($update->callbackQueryId);
+        $filas = $this->gastos->pendientesDeLote($userId, $lote);
+
+        if ($filas === []) {
+            return;
+        }
+
+        $lineas = ['🧾 <b>Detalle de la importación</b>', ''];
+
+        foreach ($filas as $fila) {
+            $monto = Money::deDecimal((string) $fila['monto'], (string) $fila['moneda']);
+            $comercio = (string) $fila['comercio'];
+
+            $lineas[] = sprintf(
+                '%s  %s  %s — <b>%s</b>',
+                (string) $fila['emoji'],
+                self::soloDiaYMes((string) $fila['fecha']),
+                ExpenseCard::escapar($comercio !== '' ? $comercio : 'Consumo'),
+                ExpenseCard::escapar($monto->formatear())
+            );
+        }
+
+        $lineas[] = '';
+        $lineas[] = '<i>Si algo está mal, descartá la importación y mandame el resumen de nuevo.</i>';
+
+        $this->telegram->enviarMensaje($update->chatId, implode("\n", $lineas));
+    }
+
+    private static function soloDiaYMes(string $fechaIso): string
+    {
+        $fecha = \DateTimeImmutable::createFromFormat('Y-m-d', $fechaIso);
+
+        return $fecha === false ? $fechaIso : $fecha->format('d/m');
     }
 
     private function confirmar(int $userId, Update $update, int $expenseId): void
@@ -395,6 +614,7 @@ final class Dispatcher
             '• Texto: <code>1200 super</code>, <code>nafta 25k</code>, <code>ayer 45 lucas de prepaga</code>',
             '• Foto del ticket o captura de la app',
             '• Nota de voz',
+            '• El PDF del resumen de la tarjeta: te cargo el mes entero de una',
             '',
             '<b>Comandos</b>',
             '',

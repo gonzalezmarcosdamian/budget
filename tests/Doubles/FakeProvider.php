@@ -95,6 +95,12 @@ final class FakeProvider implements LlmProvider
     }
 
     /** @return list<Extraction> */
+    public function extraerDeResumen(string $binario, string $mimeType): array
+    {
+        return $this->responder();
+    }
+
+    /** @return list<Extraction> */
     private function responder(): array
     {
         $this->llamadas++;

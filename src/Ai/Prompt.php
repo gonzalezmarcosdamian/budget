@@ -71,6 +71,40 @@ final class Prompt
             . $extra;
     }
 
+    /**
+     * Un resumen de tarjeta no es un ticket: trae el mes entero, con
+     * cuotas, impuestos y el saldo anterior mezclados entre los consumos.
+     * Distinguir qué es un gasto real es la mitad del trabajo.
+     */
+    public static function paraResumen(string $hoyIso): string
+    {
+        return self::instruccion($hoyIso) . <<<'TEXTO'
+
+
+        El archivo es un RESUMEN DE TARJETA DE CRÉDITO argentino.
+        Extraé todos los consumos del detalle, uno por línea.
+
+        Qué SÍ es un gasto:
+        - Cada compra o consumo con su fecha, descripción e importe.
+        - Una cuota ("3/12") es un gasto del mes: usá el importe de la
+          cuota, no el total de la compra, y dejá la referencia en el
+          comercio: "Zara 3/12".
+
+        Qué NO hay que cargar, porque no son consumos nuevos:
+        - Saldo anterior, pago recibido, saldo actual, total a pagar.
+        - Impuestos y percepciones (IVA, ingresos brutos, ley 25.413),
+          intereses, punitorios, seguros de la tarjeta y cargos
+          administrativos.
+        - Los subtotales y el total del resumen.
+        - Los consumos en dólares de la sección en dólares, salvo que
+          lleven moneda "USD" explícita.
+
+        Usá la fecha de cada consumo, no la del resumen.
+        Si el archivo está protegido o no se puede leer, devolvé
+        {"gastos": []}.
+        TEXTO;
+    }
+
     public static function paraAudio(string $hoyIso): string
     {
         return self::instruccion($hoyIso)
