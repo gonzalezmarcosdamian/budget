@@ -117,3 +117,23 @@ prueba('un apodo que es sólo números queda como está', function (): void {
     esIgual('123456789', MercadoPago::nombreLegible('123456789'));
     esIgual('AB99999', MercadoPago::nombreLegible('AB99999'), 'dos letras no alcanzan');
 });
+
+prueba('una transferencia recibida es ingreso', function (): void {
+    $b = MercadoPago::aIngreso(pagoMp([
+        'operation_type' => 'money_transfer',
+        'transaction_amount' => 50000,
+        'description' => 'Varios',
+    ]));
+
+    noEsNulo($b);
+    esIgual(Draft::TIPO_INGRESO, $b?->tipo);
+    esIgual(5_000_000, $b?->monto->centavos);
+});
+
+prueba('cargar saldo o rescatar una inversión no son ingresos', function (): void {
+    // Es plata propia volviendo. Contarla como ingreso duplicaría el
+    // patrimonio: ya estaba, sólo cambió de lugar.
+    foreach (['account_fund', 'investment', 'partition_transfer', 'regular_payment'] as $tipo) {
+        esNulo(MercadoPago::aIngreso(pagoMp(['operation_type' => $tipo])), $tipo);
+    }
+});

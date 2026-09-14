@@ -17,6 +17,9 @@ use DateTimeImmutable;
  */
 final class Reports
 {
+    /** Cuántas contrapartes entran en el reporte antes de volverse ruido. */
+    private const CONTRAPARTES_EN_EL_REPORTE = 5;
+
     public function __construct(private readonly ExpenseRepository $gastos)
     {
     }
@@ -90,6 +93,10 @@ final class Reports
             );
         }
 
+        foreach ($this->transferencias($userId, $desde, $hasta) as $linea) {
+            $lineas[] = $linea;
+        }
+
         $cuantos = $this->gastos->cantidadEntre($userId, $desde, $hasta);
         $lineas[] = '';
         $lineas[] = sprintf('<i>%d movimientos</i>', $cuantos);
@@ -161,6 +168,55 @@ final class Reports
         }
 
         return $lineas;
+    }
+
+    /**
+     * Transferencias entre personas, siempre en neto.
+     *
+     * Mandarle plata a alguien que te devuelve casi todo no es un gasto
+     * por el total enviado. Mostrar las dos puntas por separado invita a
+     * leer mal; el neto es el número que importa.
+     *
+     * @return list<string>
+     */
+    private function transferencias(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
+    {
+        $netos = $this->gastos->netoPorContraparte($userId, $desde, $hasta);
+
+        if ($netos === []) {
+            return [];
+        }
+
+        $lineas = ['', '🔁 <b>Transferencias (neto)</b>'];
+        $mostradas = 0;
+
+        foreach ($netos as $n) {
+            if ($mostradas >= self::CONTRAPARTES_EN_EL_REPORTE) {
+                break;
+            }
+
+            // Un neto en cero es alguien con quien se compensó todo: no
+            // hubo gasto, y listarlo sólo ocupa lugar.
+            if ($n['neto'] === 0) {
+                continue;
+            }
+
+            $neto = Money::deCentavos(abs($n['neto']));
+            $nombre = $n['nombre'] !== '' ? $n['nombre'] : $n['contraparte'];
+
+            $lineas[] = sprintf(
+                '%s %s — <b>%s</b>  <i>(mandaste %s, te devolvieron %s)</i>',
+                $n['neto'] > 0 ? '↗' : '↘',
+                ExpenseCard::escapar(mb_substr($nombre, 0, 26)),
+                ExpenseCard::escapar($neto->formatear()),
+                ExpenseCard::escapar($n['enviado']->formatear()),
+                ExpenseCard::escapar($n['recibido']->formatear())
+            );
+
+            $mostradas++;
+        }
+
+        return $mostradas === 0 ? [] : $lineas;
     }
 
     public function ultimos(int $userId): string

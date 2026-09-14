@@ -114,6 +114,24 @@ final class SincronizadorMp
             }
         }
 
+        // El lado de entrada: sin esto los numeros mienten, porque una
+        // devolucion queda contada como si nunca hubiera vuelto.
+        for ($pagina = 0; $pagina < self::PAGINAS_MAXIMAS; $pagina++) {
+            $cobros = $cliente->cobrosDesde($desde, self::POR_PAGINA, $pagina * self::POR_PAGINA);
+
+            if ($cobros === []) {
+                break;
+            }
+
+            foreach (array_reverse($cobros) as $cobro) {
+                $nuevos += $this->importarCobro($userId, $cobro, $lote, $cliente);
+            }
+
+            if (count($cobros) < self::POR_PAGINA) {
+                break;
+            }
+        }
+
         $this->cuentas->marcarSync((int) $cuenta['id'], $ahora);
 
         if ($nuevos > 0) {
@@ -186,6 +204,43 @@ final class SincronizadorMp
         );
 
         // id 0 significa que ese movimiento ya estaba importado.
+        return $id === 0 ? 0 : 1;
+    }
+
+    /**
+     * @param array<string,mixed> $pago
+     * @return int 1 si se importó, 0 si ya estaba o no corresponde
+     */
+    private function importarCobro(int $userId, array $pago, string $lote, MercadoPago $cliente): int
+    {
+        $borrador = MercadoPago::aIngreso($pago);
+
+        if ($borrador === null) {
+            return 0;
+        }
+
+        $contraparte = null;
+
+        try {
+            $contraparte = $cliente->contraparteDe($pago);
+        } catch (Throwable) {
+            $contraparte = null;
+        }
+
+        $id = $this->gastos->guardarBorrador(
+            $userId,
+            $borrador,
+            null,
+            $lote,
+            MercadoPago::referencia($pago),
+            ExpenseRepository::ESTADO_CONFIRMADO,
+        );
+
+        if ($id !== 0 && $contraparte !== null) {
+            $marcar = $this->gastos->pdo()->prepare('UPDATE expenses SET contraparte = ? WHERE id = ?');
+            $marcar->execute([$contraparte, $id]);
+        }
+
         return $id === 0 ? 0 : 1;
     }
 

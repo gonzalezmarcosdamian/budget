@@ -143,6 +143,53 @@ final class ExpenseRepository
         return $sentencia->rowCount();
     }
 
+    /**
+     * Enviado y recibido con cada contraparte en el período.
+     *
+     * Es la única forma honesta de mirar transferencias entre personas:
+     * mandarle $2.308.000 a alguien que devolvió $1.847.381 no es un
+     * gasto de $2.308.000. Sin netear, el total se infla un 80%.
+     *
+     * @return list<array{contraparte:string, nombre:string, enviado:Money, recibido:Money, neto:int}>
+     */
+    public function netoPorContraparte(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
+    {
+        $sentencia = $this->pdo->prepare(
+            "SELECT e.contraparte,
+                    MAX(e.comercio) AS nombre,
+                    COALESCE(SUM(CASE WHEN e.tipo = 'gasto' THEN e.monto_ars ELSE 0 END), 0) AS enviado,
+                    COALESCE(SUM(CASE WHEN e.tipo = 'ingreso' THEN e.monto_ars ELSE 0 END), 0) AS recibido
+             FROM expenses e
+             WHERE e.user_id = ? AND e.estado = ? AND e.contraparte IS NOT NULL
+               AND e.fecha BETWEEN ? AND ?
+             GROUP BY e.contraparte
+             HAVING enviado > 0 OR recibido > 0
+             ORDER BY (enviado - recibido) DESC"
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        return array_map(
+            static function (array $f): array {
+                $enviado = Money::deDecimal((string) $f['enviado']);
+                $recibido = Money::deDecimal((string) $f['recibido']);
+
+                return [
+                    'contraparte' => (string) $f['contraparte'],
+                    'nombre' => (string) $f['nombre'],
+                    'enviado' => $enviado,
+                    'recibido' => $recibido,
+                    'neto' => $enviado->centavos - $recibido->centavos,
+                ];
+            },
+            $sentencia->fetchAll()
+        );
+    }
+
     /** Cuántos gastos confirmados hay en el período. */
     public function cantidadEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): int
     {

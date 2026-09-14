@@ -151,6 +151,84 @@ final class MercadoPago
         return mb_convert_case($limpio, MB_CASE_TITLE, 'UTF-8');
     }
 
+    /**
+     * Lo que a uno le pagaron.
+     *
+     * Existe porque sin este lado los numeros mienten: transferirle
+     * $2.308.000 a un amigo que te devolvio $1.847.381 no es un gasto de
+     * $2.308.000, es uno de $460.619. Mirar solo la salida infla el
+     * total un 80%.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function cobrosDesde(DateTimeImmutable $desde, int $limite = 50, int $offset = 0): array
+    {
+        $url = self::BASE . '/v1/payments/search?' . http_build_query([
+            'collector.id' => $this->mpUserId,
+            'status' => 'approved',
+            'sort' => 'date_created',
+            'criteria' => 'desc',
+            'limit' => max(1, min($limite, 100)),
+            'offset' => max(0, $offset),
+            'range' => 'date_created',
+            'begin_date' => $desde->format('Y-m-d\TH:i:s.000P'),
+            'end_date' => 'NOW',
+        ]);
+
+        $respuesta = $this->http->getJson($url, ['Authorization: Bearer ' . $this->accessToken]);
+        $resultados = $respuesta['results'] ?? null;
+
+        if (!is_array($resultados)) {
+            throw new RuntimeException('Mercado Pago no devolvio resultados');
+        }
+
+        return array_values(array_filter($resultados, 'is_array'));
+    }
+
+    /**
+     * Un cobro convertido en ingreso.
+     *
+     * Solo cuentan las transferencias de otra persona. Cargar saldo,
+     * rescatar una inversion o sacar de una alcancia es plata propia
+     * volviendo: contarla como ingreso duplicaria el patrimonio.
+     *
+     * @param array<string,mixed> $pago
+     */
+    public static function aIngreso(array $pago): ?Draft
+    {
+        if ((string) ($pago['operation_type'] ?? '') !== 'money_transfer') {
+            return null;
+        }
+
+        $monto = $pago['transaction_amount'] ?? null;
+
+        if (!is_numeric($monto) || (float) $monto <= 0) {
+            return null;
+        }
+
+        $fecha = self::fecha($pago);
+
+        if ($fecha === null) {
+            return null;
+        }
+
+        $base = self::aBorrador(['operation_type' => 'money_transfer'] + $pago);
+
+        return new Draft(
+            monto: Money::deDecimal((string) $monto, (string) ($pago['currency_id'] ?? 'ARS')),
+            fecha: $fecha,
+            comercio: $base?->comercio ?? 'Transferencia recibida',
+            descripcion: 'Transferencia recibida',
+            categoria: null,
+            medioPago: self::medioDePago($pago),
+            fuente: Draft::FUENTE_API,
+            confianza: 0.90,
+            modelo: 'mercadopago',
+            tipo: Draft::TIPO_INGRESO,
+            naturaleza: Draft::NATURALEZA_VARIABLE,
+        );
+    }
+
     /** Identificador estable del pago, para no importarlo dos veces. */
     public static function referencia(array $pago): string
     {
