@@ -12,11 +12,20 @@ namespace Budget\Ai;
  */
 final class Prompt
 {
-    /** Categorías válidas: el modelo tiene que elegir de esta lista y no inventar. */
+    /**
+     * Categorías válidas: el modelo tiene que elegir de esta lista y no
+     * inventar.
+     *
+     * Tiene que coincidir con las semillas de las migraciones. Cuando se
+     * agregaron Alquiler, Impuestos y las de ingreso e inversión, esta
+     * lista quedó atrás y el modelo no podía asignarlas por más que
+     * existieran en la base.
+     */
     public const CATEGORIAS = [
-        'Supermercado', 'Comida y delivery', 'Transporte', 'Servicios',
-        'Hogar', 'Salud', 'Salidas y fiestas', 'Entretenimiento',
-        'Compras', 'Educación', 'Otros',
+        'Alquiler', 'Supermercado', 'Comida y delivery', 'Transporte',
+        'Servicios', 'Impuestos', 'Hogar', 'Salud', 'Salidas y fiestas',
+        'Entretenimiento', 'Compras', 'Educación', 'Comisiones', 'Otros',
+        'Sueldo', 'Otros ingresos', 'Inversiones',
     ];
 
     public static function instruccion(string $hoyIso): string
