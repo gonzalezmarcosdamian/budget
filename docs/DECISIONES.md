@@ -251,6 +251,23 @@ con DNS en Vercel (donde ya está el apex) y un registro A hacia la IP de WNPowe
 certificado no se emite hasta que el registro A propaga. Es un paso más, una sola
 vez.
 
+**Corrección del 14/09/2026, al ir a ejecutarlo.** El apex
+`marcosdamiangonzalez.ar` resuelve a **Vercel**, no a WNPower: no existe una
+cuenta de hosting para ese dominio. La IP compartida de WNPower es
+`44.218.66.24`, la misma que sirve `gargonatural.com.ar`, o sea que el único
+espacio de hosting disponible es el de esa cuenta.
+
+Eso no invalida la decisión, pero agrega un paso: en cPanel hay que dar de alta
+`bot.marcosdamiangonzalez.ar` **como dominio adicional** (no como subdominio,
+porque la cuenta no controla el apex), y en Vercel apuntar sólo el registro A de
+`bot` hacia `44.218.66.24`. El apex sigue en Vercel, intacto.
+
+La alternativa seguiría siendo `bot.gargonatural.com.ar`, que no necesita ni el
+dominio adicional ni tocar DNS porque la cuenta ya controla ese dominio. Se
+mantiene descartada por la misma razón de antes —atar un proyecto personal a un
+activo de negocio— pero ahora el costo de evitarlo está medido: un alta más en
+cPanel y un registro de DNS.
+
 ---
 
 ## 16. El bot puede morirse en silencio, así que hay que vigilarlo
