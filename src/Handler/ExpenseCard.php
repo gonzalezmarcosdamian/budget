@@ -157,6 +157,18 @@ final class ExpenseCard
         return implode("\n", $lineas);
     }
 
+    /**
+     * Lo que se ofrece cuando la importación ya se guardó sola: no hay
+     * nada que confirmar, sólo la salida por si algo entró mal.
+     */
+    public static function tecladoDeDeshacer(string $lote): Keyboard
+    {
+        return Keyboard::nueva()->fila([
+            '👀 Ver detalle' => self::ACCION_LOTE_DETALLE . ':' . $lote,
+            '↩ Deshacer' => self::ACCION_LOTE_DESCARTAR . ':' . $lote,
+        ]);
+    }
+
     public static function tecladoDeLote(string $lote, int $cantidad): Keyboard
     {
         return Keyboard::nueva()

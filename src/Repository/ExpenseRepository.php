@@ -39,6 +39,7 @@ final class ExpenseRepository
         ?int $categoryId,
         ?string $lote = null,
         ?string $origenExterno = null,
+        string $estado = self::ESTADO_BORRADOR,
     ): int {
         $sentencia = $this->pdo->prepare(
             'INSERT INTO expenses
@@ -63,7 +64,7 @@ final class ExpenseRepository
                 $borrador->fuente,
                 $borrador->confianza,
                 $borrador->modelo,
-                self::ESTADO_BORRADOR,
+                $estado,
                 $lote,
                 $origenExterno,
             ]);
@@ -115,27 +116,33 @@ final class ExpenseRepository
         return $sentencia->rowCount();
     }
 
-    /** @return int cuántos se descartaron */
+    /**
+     * @return int cuántos se descartaron
+     *
+     * No filtra por estado a propósito: sirve tanto para rechazar una
+     * importación pendiente como para deshacer una que se confirmó sola,
+     * que es lo que hace la sincronización de Mercado Pago.
+     */
     public function descartarLote(int $userId, string $lote): int
     {
         $sentencia = $this->pdo->prepare(
             'UPDATE expenses SET estado = ?
-             WHERE user_id = ? AND lote = ? AND estado = ?'
+             WHERE user_id = ? AND lote = ? AND estado <> ?'
         );
-        $sentencia->execute([self::ESTADO_DESCARTADO, $userId, $lote, self::ESTADO_BORRADOR]);
+        $sentencia->execute([self::ESTADO_DESCARTADO, $userId, $lote, self::ESTADO_DESCARTADO]);
 
         return $sentencia->rowCount();
     }
 
-    /** @return array{cantidad:int, total:Money} lo que queda pendiente del lote */
-    public function resumenDeLote(int $userId, string $lote): array
+    /** @return array{cantidad:int, total:Money} */
+    public function resumenDeLote(int $userId, string $lote, string $estado = self::ESTADO_BORRADOR): array
     {
         $sentencia = $this->pdo->prepare(
             'SELECT COUNT(*) AS cantidad, COALESCE(SUM(monto_ars), 0) AS total
              FROM expenses
              WHERE user_id = ? AND lote = ? AND estado = ?'
         );
-        $sentencia->execute([$userId, $lote, self::ESTADO_BORRADOR]);
+        $sentencia->execute([$userId, $lote, $estado]);
         $fila = $sentencia->fetch();
 
         return [

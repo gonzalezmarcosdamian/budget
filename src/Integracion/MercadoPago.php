@@ -61,7 +61,7 @@ final class MercadoPago
      *
      * @return list<array<string,mixed>>
      */
-    public function pagosDesde(DateTimeImmutable $desde, int $limite = 50): array
+    public function pagosDesde(DateTimeImmutable $desde, int $limite = 50, int $offset = 0): array
     {
         $url = self::BASE . '/v1/payments/search?' . http_build_query([
             'payer.id' => $this->mpUserId,
@@ -69,6 +69,7 @@ final class MercadoPago
             'sort' => 'date_created',
             'criteria' => 'desc',
             'limit' => max(1, min($limite, 100)),
+            'offset' => max(0, $offset),
             'range' => 'date_created',
             'begin_date' => $desde->format('Y-m-d\TH:i:s.000P'),
             'end_date' => 'NOW',

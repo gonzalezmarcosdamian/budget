@@ -19,19 +19,32 @@ use DateTimeImmutable;
 use Throwable;
 
 /**
- * Trae los pagos nuevos de Mercado Pago y los propone como gastos.
+ * Trae los pagos nuevos de Mercado Pago y los carga como gastos.
  *
- * Lo corre el cron. Los movimientos llegan como borradores agrupados en
- * un lote: el bot nunca guarda a ciegas, ni siquiera cuando el dato
- * viene de una API y no de una foto borrosa.
+ * Lo corre el cron. A diferencia del resto del bot, acá los movimientos
+ * se guardan ya confirmados: el dato no lo interpretó un modelo, viene
+ * de una API con importe exacto e identificador estable. El lote permite
+ * deshacer la importación entera si algo entró mal.
  */
 final class SincronizadorMp
 {
-    /** Cuánto mirar hacia atrás la primera vez que se vincula una cuenta. */
-    private const DIAS_PRIMERA_SYNC = 30;
+    /**
+     * Cuánto mirar hacia atrás la primera vez que se vincula una cuenta.
+     *
+     * Un año, para que los reportes de meses pasados tengan datos desde
+     * el arranque en vez de empezar vacíos. Sólo ocurre una vez: después
+     * la sincronización va desde la última corrida.
+     */
+    private const DIAS_PRIMERA_SYNC = 365;
 
     /** Margen sobre la última sincronización, por si un pago se aprobó tarde. */
     private const HORAS_DE_SOLAPE = 6;
+
+    /** Movimientos por página al pedirle el historial a Mercado Pago. */
+    private const POR_PAGINA = 100;
+
+    /** Tope de páginas, para que un historial largo no cuelgue el cron. */
+    private const PAGINAS_MAXIMAS = 30;
 
     public function __construct(
         private readonly MercadoPagoRepository $cuentas,
@@ -80,33 +93,24 @@ final class SincronizadorMp
         );
 
         $ahora = $this->reloj->ahora();
-        $pagos = $cliente->pagosDesde($this->desdeCuando($cuenta, $ahora));
-
+        $desde = $this->desdeCuando($cuenta, $ahora);
         $lote = bin2hex(random_bytes(6));
         $nuevos = 0;
 
-        // Del más viejo al más nuevo, para que el listado quede en orden.
-        foreach (array_reverse($pagos) as $pago) {
-            $borrador = MercadoPago::aBorrador($pago);
+        for ($pagina = 0; $pagina < self::PAGINAS_MAXIMAS; $pagina++) {
+            $pagos = $cliente->pagosDesde($desde, self::POR_PAGINA, $pagina * self::POR_PAGINA);
 
-            if ($borrador === null) {
-                continue;
+            if ($pagos === []) {
+                break;
             }
 
-            $categoria = $this->categorizador->adivinar($borrador->comercio);
-            $borrador = $borrador->conCategoria($categoria);
+            // Del más viejo al más nuevo, para que el listado quede en orden.
+            foreach (array_reverse($pagos) as $pago) {
+                $nuevos += $this->importar($userId, $pago, $lote);
+            }
 
-            $id = $this->gastos->guardarBorrador(
-                $userId,
-                $borrador,
-                $this->categoriaId($userId, $borrador->comercio, $categoria),
-                $lote,
-                MercadoPago::referencia($pago)
-            );
-
-            // id 0 significa que ese movimiento ya estaba importado.
-            if ($id !== 0) {
-                $nuevos++;
+            if (count($pagos) < self::POR_PAGINA) {
+                break;
             }
         }
 
@@ -125,6 +129,44 @@ final class SincronizadorMp
         }
 
         return $nuevos;
+    }
+
+    /**
+     * Los movimientos de Mercado Pago se guardan ya confirmados.
+     *
+     * Es una excepción deliberada a la regla de que el bot nunca guarda
+     * a ciegas, y se sostiene porque acá el dato no lo leyó un modelo de
+     * una foto borrosa: viene de una API, con importe exacto, fecha e
+     * identificador estable. Confirmar de a uno cuarenta movimientos
+     * ciertos es fricción sin información.
+     *
+     * El lote sigue existiendo, para poder deshacer la importación entera.
+     *
+     * @param array<string,mixed> $pago
+     * @return int 1 si se importó, 0 si ya estaba
+     */
+    private function importar(int $userId, array $pago, string $lote): int
+    {
+        $borrador = MercadoPago::aBorrador($pago);
+
+        if ($borrador === null) {
+            return 0;
+        }
+
+        $categoria = $this->categorizador->adivinar($borrador->comercio);
+        $borrador = $borrador->conCategoria($categoria);
+
+        $id = $this->gastos->guardarBorrador(
+            $userId,
+            $borrador,
+            $this->categoriaId($userId, $borrador->comercio, $categoria),
+            $lote,
+            MercadoPago::referencia($pago),
+            ExpenseRepository::ESTADO_CONFIRMADO
+        );
+
+        // id 0 significa que ese movimiento ya estaba importado.
+        return $id === 0 ? 0 : 1;
     }
 
     /** @param array<string,mixed> $cuenta */
@@ -165,13 +207,16 @@ final class SincronizadorMp
             return;
         }
 
-        $resumen = $this->gastos->resumenDeLote($userId, $lote);
+        $resumen = $this->gastos->resumenDeLote($userId, $lote, ExpenseRepository::ESTADO_CONFIRMADO);
 
         $this->telegram->enviarMensaje(
             (int) $usuario['telegram_chat_id'],
-            "💳 <b>Mercado Pago</b>\n\n"
-            . ExpenseCard::textoDeLote($resumen['cantidad'], $resumen['total'], 0, '', ''),
-            ExpenseCard::tecladoDeLote($lote, $resumen['cantidad'])
+            sprintf(
+                "💳 <b>Mercado Pago</b>\n\n%d movimientos nuevos — <b>%s</b>\n\n<i>Ya quedaron guardados.</i>",
+                $resumen['cantidad'],
+                ExpenseCard::escapar($resumen['total']->formatear())
+            ),
+            ExpenseCard::tecladoDeDeshacer($lote)
         );
     }
 }
