@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Carga movimientos que ocurrieron pero que ningún sistema registró.
  *
- *   php bin/imputar.php <chat_id> <categoria> <dia> <comercio> <mes=importe>...
+ *   php bin/imputar.php [--real] <chat_id> <categoria> <dia> <comercio> <mes=importe>...
  *
  * Ejemplo:
  *   php bin/imputar.php 1595524230 Alquiler 10 "Alquiler" 2025-12=321973 2026-01=335501
@@ -34,11 +34,17 @@ if (PHP_SAPI !== 'cli') {
 
 require __DIR__ . '/../src/autoload.php';
 
-$chatId = (int) ($argv[1] ?? 0);
-$categoria = (string) ($argv[2] ?? '');
-$dia = (int) ($argv[3] ?? 0);
-$comercio = (string) ($argv[4] ?? '');
-$meses = array_slice($argv, 5);
+// --real marca los movimientos como dato verificado y no como estimación.
+// Importa que la distinción viva en el registro, no en la memoria de
+// quien lo cargó.
+$args = array_values(array_filter(array_slice($argv, 1), static fn (string $a): bool => $a !== '--real'));
+$esReal = in_array('--real', $argv, true);
+
+$chatId = (int) ($args[0] ?? 0);
+$categoria = (string) ($args[1] ?? '');
+$dia = (int) ($args[2] ?? 0);
+$comercio = (string) ($args[3] ?? '');
+$meses = array_slice($args, 4);
 
 if ($chatId === 0 || $categoria === '' || $dia < 1 || $dia > 28 || $comercio === '' || $meses === []) {
     fwrite(STDERR, "Uso: php bin/imputar.php <chat_id> <categoria> <dia> <comercio> <YYYY-MM=importe>...\n");
@@ -84,12 +90,12 @@ foreach ($meses as $par) {
         monto: Money::deDecimal((string) $importe),
         fecha: $fecha,
         comercio: $comercio,
-        descripcion: $comercio . ' (estimado)',
+        descripcion: $comercio . ($esReal ? '' : ' (estimado)'),
         categoria: $categoria,
         medioPago: '',
-        fuente: Draft::FUENTE_ESTIMADO,
-        confianza: 0.50,
-        modelo: 'interpolacion-geometrica',
+        fuente: $esReal ? Draft::FUENTE_MANUAL : Draft::FUENTE_ESTIMADO,
+        confianza: $esReal ? 1.0 : 0.50,
+        modelo: $esReal ? 'comprobante' : 'interpolacion-geometrica',
         tipo: Draft::TIPO_GASTO,
         naturaleza: Draft::NATURALEZA_FIJO,
     );
@@ -99,7 +105,7 @@ foreach ($meses as $par) {
         $borrador,
         $categoryId,
         $lote,
-        sprintf('estimado:%s:%s', mb_strtolower($categoria), $mes),
+        sprintf('%s:%s:%s', $esReal ? 'manual' : 'estimado', mb_strtolower($categoria), $mes),
         ExpenseRepository::ESTADO_CONFIRMADO
     );
 
@@ -111,7 +117,7 @@ foreach ($meses as $par) {
     }
 
     $cargados++;
-    printf("  %s  %s  estimado\n", $mes, $borrador->monto->formatear());
+    printf("  %s  %s  %s\n", $mes, $borrador->monto->formatear(), $esReal ? 'real' : 'estimado');
 }
 
 printf("\n%d cargados, %d ya estaban. Lote %s\n", $cargados, $salteados, $lote);

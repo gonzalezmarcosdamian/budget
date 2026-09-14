@@ -23,6 +23,9 @@ final class Draft
     public const FUENTE_MAIL = 'mail';
     public const FUENTE_API = 'api';
 
+    /** Cargado a mano desde un comprobante real que el bot no puede leer. */
+    public const FUENTE_MANUAL = 'manual';
+
     /**
      * Movimiento que nadie registró: lo dedujo el sistema a partir de
      * una serie. Se marca para siempre, no sólo al importarlo: dentro de
