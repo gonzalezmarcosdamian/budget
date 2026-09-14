@@ -415,3 +415,91 @@ Un error silencioso que deja el CI en verde es peor que uno ruidoso, así que la
 lección no quedó sólo escrita: el job de despliegue ahora **valida la ruta**
 antes de subir nada y falla si no empieza con `/` o si parece una ruta de
 Windows. Anotarlo en un documento no alcanzó la primera vez.
+
+---
+
+## 20. La API de Mercado Pago sí devuelve lo que uno gastó
+
+**Contexto.** Se concluyó, leyendo documentación, que la API de MP servía
+sólo para cobrar: todo lo documentado tiene forma de vendedor (comisiones,
+liquidaciones, contracargos, `external_reference`). La conclusión era **falsa**.
+
+**Lo que lo resolvió.** Una POC previa del dueño, en su propia máquina, ya lo
+tenía medido. Verificado de nuevo contra la cuenta real:
+
+```
+GET /v1/payments/search?payer.id=<id>&status=approved   → 550 pagos propios
+GET /v1/account/balance                                 → 404
+GET /v1/account/movements                               → 404
+```
+
+**Decisión.** `payments/search` filtrado por `payer.id` es la fuente de gastos en
+tiempo real. No hay endpoint de saldo ni de movimientos: no hace falta.
+
+**La lección, por segunda vez en el día.** Ante una pregunta de capacidades, se
+le pregunta al sistema. La documentación es el respaldo, no la fuente. Es
+exactamente lo mismo que pasó con Node.js Selector en la decisión 17.
+
+---
+
+## 21. Qué movimiento de Mercado Pago es un gasto
+
+**Contexto.** La mitad de lo que devuelve la API no es un gasto. Clasificación
+sobre 50 movimientos reales:
+
+| `operation_type` | Qué es | Decisión |
+|---|---|---|
+| `regular_payment` | Compras, con el comercio en la descripción | Gasto, confianza 0.95 |
+| `money_transfer` | Transferencias salientes, descripción siempre "Varios" | Gasto, confianza 0.55 |
+| `account_fund` | Cargar saldo | **No** |
+| `partition_transfer` | Alcancías | **No** |
+| `investment` | Invertir el saldo | **No** |
+
+**Decisión.** Los tres últimos son plata del usuario cambiando de bolsillo:
+contarlos infla el total y hace que el reporte mensual mienta. Un
+`operation_type` desconocido también se descarta — mejor perder un gasto que
+cargar basura en un total que se usa para decidir.
+
+**Consecuencias.** Las transferencias entran con confianza baja y comercio
+genérico "Transferencia", porque "Varios" no dice nada y ensuciaría el nombre.
+
+---
+
+## 22. Mercado Pago se guarda confirmado, y es la excepción a la decisión 5
+
+**Contexto.** El dueño pidió explícitamente no tener que confirmar los
+movimientos de Mercado Pago.
+
+**Decisión.** Los gastos que llegan por la API se guardan ya `confirmado`, no
+como borrador.
+
+**Por qué se sostiene.** La decisión 5 existe porque un modelo leyendo una foto
+borrosa se equivoca, y un gasto mal cargado en silencio destruye la confianza en
+los reportes. Acá el dato no lo interpretó nadie: viene de una API con importe
+exacto, fecha e identificador estable. Confirmar de a uno cuarenta movimientos
+ciertos es fricción sin información.
+
+**La salida sigue existiendo.** El lote permite deshacer la importación entera de
+un toque, y el aviso ofrece "Ver detalle" y "Deshacer" en vez de "Guardar". La
+regla que no se toca no es "siempre confirmar": es **que el usuario siempre pueda
+revertir**.
+
+**Dónde NO aplica.** Fotos, audios, texto y resúmenes en PDF siguen pidiendo
+confirmación. Ahí sí hay un modelo interpretando.
+
+---
+
+## 23. La idempotencia de una importación la garantiza la base
+
+**Contexto.** La sincronización mira seis horas hacia atrás de la última corrida,
+porque un pago puede aprobarse después de creado. Ese solape trae movimientos ya
+importados en cada corrida.
+
+**Decisión.** `origen_externo` guarda la referencia en el sistema de origen
+(`mp:178019948833`), con índice único `(user_id, origen_externo)`. Un duplicado
+lo rechaza MySQL y la aplicación cuenta cero, en vez de consultar antes de cada
+inserción.
+
+**Consecuencias.** Sincronizar dos veces seguidas importa cero la segunda,
+verificado. Y como MySQL admite varios NULL en un índice único, los gastos
+cargados a mano —que no tienen origen externo— no se estorban entre sí.
