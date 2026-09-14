@@ -13,7 +13,9 @@ use Budget\Handler\Dispatcher;
 use Budget\Expense\CategoryGuesser as Categorizador;
 use Budget\Handler\Reports;
 use Budget\Integracion\SincronizadorMp;
+use Budget\Handler\Recordatorios;
 use Budget\Repository\MercadoPagoRepository;
+use Budget\Repository\RecurringRepository;
 use Budget\Support\Cifrado;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
@@ -87,6 +89,16 @@ final class App
             http: new Http(),
             reloj: $this->reloj,
             log: $this->log,
+        );
+    }
+
+    public function recordatorios(): Recordatorios
+    {
+        return new Recordatorios(
+            new RecurringRepository($this->pdo()),
+            $this->telegram(),
+            $this->reloj,
+            $this->log,
         );
     }
 

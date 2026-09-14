@@ -67,6 +67,17 @@ try {
     contar($silencioso, 'Mercado Pago sin sincronizar: ' . $e->getMessage());
 }
 
+// 4. Recordatorios de gastos que se repiten.
+try {
+    $avisados = $app->recordatorios()->enviarPendientes();
+
+    if ($avisados > 0) {
+        contar($silencioso, sprintf('Recordatorios enviados: %d.', $avisados));
+    }
+} catch (Throwable $e) {
+    $app->log->excepcion($e, 'cron: recordatorios');
+}
+
 $alerta = HealthCheck::alerta($info);
 
 if ($alerta === null) {

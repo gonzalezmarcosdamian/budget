@@ -9,6 +9,7 @@ use Budget\Ai\Router;
 use Budget\Expense\Draft;
 use Budget\Expense\FastParser;
 use Budget\Repository\CategoryRepository;
+use Budget\Repository\RecurringRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Repository\UserRepository;
 use Budget\Support\Clock;
@@ -414,6 +415,12 @@ final class Dispatcher
             return;
         }
 
+        if (Recordatorios::esAccion($update->callbackData)) {
+            $this->manejarRecurrente($userId, $update);
+
+            return;
+        }
+
         $accion = ExpenseCard::decodificar($update->callbackData);
 
         if ($accion === null) {
@@ -449,6 +456,77 @@ final class Dispatcher
             ExpenseCard::ACCION_LOTE_DETALLE => $this->mostrarLote($userId, $update, $lote),
             default => $this->telegram->responderCallback($update->callbackQueryId),
         };
+    }
+
+    /**
+     * El usuario responde al recordatorio de un gasto que se repite.
+     *
+     * Cargarlo lo da por hecho con el monto conocido; saltearlo corre el
+     * aviso al mes que viene. En los dos casos el recordatorio no vuelve
+     * a aparecer este mes.
+     */
+    private function manejarRecurrente(int $userId, Update $update): void
+    {
+        $accion = ExpenseCard::decodificar($update->callbackData);
+        $recurrentes = new RecurringRepository($this->gastos->pdo());
+        $r = $accion === null ? null : $recurrentes->porId($userId, $accion['expenseId']);
+
+        if ($accion === null || $r === null) {
+            $this->telegram->responderCallback($update->callbackQueryId);
+
+            return;
+        }
+
+        $ahora = $this->reloj->ahora();
+        $recurrentes->posponerAlMesQueViene($userId, (int) $r['id'], $ahora);
+
+        if ($accion['accion'] === Recordatorios::ACCION_SALTEAR) {
+            $this->telegram->responderCallback($update->callbackQueryId, 'Salteado');
+            $this->telegram->editarMensaje(
+                $update->chatId,
+                $update->messageId,
+                sprintf('⏭ <i>%s: salteado este mes.</i>', ExpenseCard::escapar((string) $r['comercio']))
+            );
+
+            return;
+        }
+
+        $monto = Money::deDecimal((string) $r['monto_esperado']);
+
+        $borrador = new Draft(
+            monto: $monto,
+            fecha: $ahora,
+            comercio: (string) $r['comercio'],
+            descripcion: (string) $r['comercio'],
+            categoria: $r['categoria'] === null ? null : (string) $r['categoria'],
+            medioPago: '',
+            fuente: Draft::FUENTE_MANUAL,
+            confianza: 1.0,
+            modelo: 'recurrente',
+            tipo: Draft::TIPO_GASTO,
+            naturaleza: (string) ($r['naturaleza'] ?? Draft::NATURALEZA_FIJO),
+        );
+
+        $this->gastos->guardarBorrador(
+            $userId,
+            $borrador,
+            $r['category_id'] === null ? null : (int) $r['category_id'],
+            null,
+            sprintf('recurrente:%d:%s', (int) $r['id'], $ahora->format('Y-m')),
+            ExpenseRepository::ESTADO_CONFIRMADO
+        );
+
+        $this->telegram->responderCallback($update->callbackQueryId, 'Cargado');
+        $this->telegram->editarMensaje(
+            $update->chatId,
+            $update->messageId,
+            sprintf(
+                "✅ <b>%s</b> — <b>%s</b>\n📁 %s",
+                ExpenseCard::escapar((string) $r['comercio']),
+                ExpenseCard::escapar($monto->formatear()),
+                ExpenseCard::escapar((string) ($r['categoria'] ?? 'Sin categoría'))
+            )
+        );
     }
 
     private function confirmarLote(int $userId, Update $update, string $lote): void
