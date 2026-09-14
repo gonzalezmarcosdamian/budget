@@ -93,8 +93,7 @@ final class Reports
             );
         }
 
-        return implode("
-", $lineas);
+        return implode("\n", $lineas);
     }
 
     public function delDia(int $userId, DateTimeImmutable $dia): string
