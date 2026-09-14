@@ -17,6 +17,11 @@ final class CategoryGuesser
 
     /** @var array<string, list<string>> categoría => palabras clave */
     private const PALABRAS = [
+        // Va primero: es la categoría más específica y la que menos
+        // tolera un error, porque es el gasto fijo más grande del mes.
+        'Alquiler' => [
+            'alquiler', 'siro', 'roela', 'inmobiliaria', 'locacion',
+        ],
         'Supermercado' => [
             'super', 'supermercado', 'coto', 'carrefour', 'jumbo', 'disco', 'vea',
             'changomas', 'walmart', 'chino', 'almacen', 'verduleria',
@@ -41,7 +46,7 @@ final class CategoryGuesser
             'telefono', 'cable', 'suscripcion',
         ],
         'Hogar' => [
-            'expensas', 'alquiler', 'ferreteria', 'pinturas', 'sodimac',
+            'expensas', 'ferreteria', 'pinturas', 'sodimac',
             'easy', 'mueble', 'limpieza', 'electrodomestico', 'abl',
             'inmobiliaria',
         ],

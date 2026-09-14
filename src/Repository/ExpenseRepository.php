@@ -43,14 +43,17 @@ final class ExpenseRepository
     ): int {
         $sentencia = $this->pdo->prepare(
             'INSERT INTO expenses
-                (user_id, monto, moneda, monto_ars, fecha, comercio, descripcion,
-                 category_id, medio_pago, fuente, confianza, modelo, estado, lote, origen_externo)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                (user_id, tipo, naturaleza, monto, moneda, monto_ars, fecha, comercio,
+                 descripcion, category_id, medio_pago, fuente, confianza, modelo,
+                 estado, lote, origen_externo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         try {
             $sentencia->execute([
                 $userId,
+                $borrador->tipo,
+                $borrador->naturaleza,
                 $borrador->monto->aDecimal(),
                 $borrador->monto->moneda,
                 // Fase 1 opera en pesos; cuando entre el tipo de cambio,
@@ -132,6 +135,36 @@ final class ExpenseRepository
         $sentencia->execute([self::ESTADO_DESCARTADO, $userId, $lote, self::ESTADO_DESCARTADO]);
 
         return $sentencia->rowCount();
+    }
+
+    /**
+     * Cuánto del gasto del período es fijo y cuánto variable.
+     *
+     * @return array<string,Money>
+     */
+    public function gastoPorNaturaleza(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT naturaleza, SUM(monto_ars) AS total
+             FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND fecha BETWEEN ? AND ?
+             GROUP BY naturaleza'
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        $porNaturaleza = [];
+
+        foreach ($sentencia->fetchAll() as $fila) {
+            $porNaturaleza[(string) $fila['naturaleza']] = Money::deDecimal((string) $fila['total']);
+        }
+
+        return $porNaturaleza;
     }
 
     /** @return array{cantidad:int, total:Money} */
@@ -222,16 +255,26 @@ final class ExpenseRepository
         return $fila === false ? null : $fila;
     }
 
-    public function totalEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): Money
-    {
+    /**
+     * Sólo suma gastos. Una compra de CEDEARs o un sueldo que entra no
+     * pertenecen al total gastado: mezclarlos hace que el número no
+     * signifique nada.
+     */
+    public function totalEntre(
+        int $userId,
+        DateTimeImmutable $desde,
+        DateTimeImmutable $hasta,
+        string $tipo = Draft::TIPO_GASTO,
+    ): Money {
         $sentencia = $this->pdo->prepare(
             'SELECT COALESCE(SUM(monto_ars), 0) AS total
              FROM expenses
-             WHERE user_id = ? AND estado = ? AND fecha BETWEEN ? AND ?'
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND fecha BETWEEN ? AND ?'
         );
         $sentencia->execute([
             $userId,
             self::ESTADO_CONFIRMADO,
+            $tipo,
             $desde->format('Y-m-d'),
             $hasta->format('Y-m-d'),
         ]);
@@ -249,7 +292,7 @@ final class ExpenseRepository
                     SUM(e.monto_ars) AS total
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id
-             WHERE e.user_id = ? AND e.estado = ? AND e.fecha BETWEEN ? AND ?
+             WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ? AND e.fecha BETWEEN ? AND ?
              GROUP BY categoria, emoji
              ORDER BY SUM(e.monto_ars) DESC'
         );
@@ -258,6 +301,7 @@ final class ExpenseRepository
             '📦',
             $userId,
             self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
             $desde->format('Y-m-d'),
             $hasta->format('Y-m-d'),
         ]);

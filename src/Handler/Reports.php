@@ -45,12 +45,28 @@ final class Reports
             return '📊 Todavía no hay gastos confirmados este mes.';
         }
 
+        $porNaturaleza = $this->gastos->gastoPorNaturaleza($userId, $desde, $hasta);
+        $fijo = $porNaturaleza['fijo'] ?? Money::deCentavos(0);
+        $variable = $porNaturaleza['variable'] ?? Money::deCentavos(0);
+
         $lineas = [
             sprintf('📊 <b>%s</b>', ExpenseCard::escapar(self::nombreDelMes($enElMes))),
             '',
             'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>',
-            '',
         ];
+
+        // El corte que vuelve accionable el reporte: sobre el gasto
+        // variable se puede decidir algo, sobre el fijo casi nada.
+        if ($fijo->centavos > 0 && $variable->centavos > 0) {
+            $lineas[] = sprintf(
+                '🔒 Fijo: %s  <i>%d%%</i>   ·   🔀 Variable: %s',
+                ExpenseCard::escapar($fijo->formatear()),
+                $fijo->porcentajeDe($total),
+                ExpenseCard::escapar($variable->formatear())
+            );
+        }
+
+        $lineas[] = '';
 
         foreach ($this->gastos->totalPorCategoria($userId, $desde, $hasta) as $renglon) {
             $lineas[] = sprintf(

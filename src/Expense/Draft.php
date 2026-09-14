@@ -23,6 +23,25 @@ final class Draft
     public const FUENTE_MAIL = 'mail';
     public const FUENTE_API = 'api';
 
+    /**
+     * Movimiento que nadie registró: lo dedujo el sistema a partir de
+     * una serie. Se marca para siempre, no sólo al importarlo: dentro de
+     * seis meses tiene que seguir siendo distinguible de un dato real.
+     */
+    public const FUENTE_ESTIMADO = 'estimado';
+
+    /** Qué le pasa a la plata. No todo movimiento es un gasto. */
+    public const TIPO_GASTO = 'gasto';
+    public const TIPO_INGRESO = 'ingreso';
+    public const TIPO_INVERSION = 'inversion';
+
+    /**
+     * Sobre el gasto variable se puede decidir; sobre el fijo casi no.
+     * Por eso separarlos es lo que vuelve accionable un reporte.
+     */
+    public const NATURALEZA_FIJO = 'fijo';
+    public const NATURALEZA_VARIABLE = 'variable';
+
     public function __construct(
         public readonly Money $monto,
         public readonly DateTimeImmutable $fecha,
@@ -33,6 +52,8 @@ final class Draft
         public readonly string $fuente = self::FUENTE_TEXTO,
         public readonly ?float $confianza = null,
         public readonly string $modelo = '',
+        public readonly string $tipo = self::TIPO_GASTO,
+        public readonly string $naturaleza = self::NATURALEZA_VARIABLE,
     ) {
     }
 
@@ -59,6 +80,16 @@ final class Draft
     public function conOrigen(string $fuente, string $modelo = '', ?float $confianza = null): self
     {
         return $this->copiarCon(fuente: $fuente, modelo: $modelo, confianza: $confianza);
+    }
+
+    public function conTipo(string $tipo, string $naturaleza): self
+    {
+        return $this->copiarCon(tipo: $tipo, naturaleza: $naturaleza);
+    }
+
+    public function esGasto(): bool
+    {
+        return $this->tipo === self::TIPO_GASTO;
     }
 
     /** Etiqueta principal de la tarjeta de confirmación. */
@@ -91,6 +122,8 @@ final class Draft
         ?string $fuente = null,
         ?float $confianza = null,
         ?string $modelo = null,
+        ?string $tipo = null,
+        ?string $naturaleza = null,
     ): self {
         return new self(
             monto: $monto ?? $this->monto,
@@ -102,6 +135,8 @@ final class Draft
             fuente: $fuente ?? $this->fuente,
             confianza: $confianza ?? $this->confianza,
             modelo: $modelo ?? $this->modelo,
+            tipo: $tipo ?? $this->tipo,
+            naturaleza: $naturaleza ?? $this->naturaleza,
         );
     }
 }

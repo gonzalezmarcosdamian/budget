@@ -42,3 +42,13 @@ prueba('reconoce a las distribuidoras de gas y luz del interior', function (): v
     esIgual('Servicios', $c->adivinar('pago epec'), 'epec');
     esIgual('Servicios', $c->adivinar('camuzzi gas'), 'camuzzi');
 });
+
+prueba('reconoce el alquiler cobrado por SIRO', function (): void {
+    // Sale de los pagos reales: la inmobiliaria cobra por Banco Roela
+    // SIRO, y "alquiler" no aparece en ninguna parte de la descripción.
+    $c = new CategoryGuesser();
+
+    esIgual('Alquiler', $c->adivinar('Banco Roela SIRO'), 'siro');
+    esIgual('Alquiler', $c->adivinar('pago alquiler'), 'la palabra directa');
+    esIgual('Hogar', $c->adivinar('expensas del mes'), 'expensas sigue en Hogar');
+});
