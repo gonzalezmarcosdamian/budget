@@ -36,8 +36,7 @@ final class TestDatabase
         $env = Env::cargar(null, ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS']);
 
         $config = new Config(
-            botToken: 'test',
-            webhookSecret: 'test',
+            env: $env,
             dsn: sprintf(
                 'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
                 $env->texto('DB_HOST', '127.0.0.1'),

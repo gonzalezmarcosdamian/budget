@@ -32,7 +32,7 @@ if ($accion === 'set') {
         exit(1);
     }
 
-    $app->telegram()->fijarWebhook($url, $app->config->webhookSecret);
+    $app->telegram()->fijarWebhook($url, $app->config->webhookSecret());
     echo "Webhook apuntado a {$url}\n";
     exit(0);
 }

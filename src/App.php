@@ -65,7 +65,7 @@ final class App
 
     public function telegram(): Client
     {
-        return $this->telegram ??= new Client($this->config->botToken);
+        return $this->telegram ??= new Client($this->config->botToken());
     }
 
     public function updates(): UpdateLog
@@ -102,12 +102,11 @@ final class App
      */
     private function router(): Router
     {
-        $env = Env::cargar($this->raiz . '/.env');
         $http = new Http();
 
         return new Router(
             [
-                new GeminiProvider($env->texto('GEMINI_API_KEY'), $http, $this->reloj),
+                new GeminiProvider($this->config->claveIa('GEMINI_API_KEY'), $http, $this->reloj),
             ],
             $this->pdo(),
             $this->log,

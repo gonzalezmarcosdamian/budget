@@ -7,16 +7,21 @@ namespace Budget\Support;
 use DateTimeZone;
 
 /**
- * Configuración validada al arranque.
+ * Configuración de la aplicación.
  *
- * Que falte una clave tiene que romper acá y no tres capas más abajo,
- * en medio de un webhook, con el usuario esperando.
+ * Lo que toda entrada necesita (base de datos, zona, moneda) se valida
+ * al construirla: que falte tiene que romper acá y no tres capas más
+ * abajo, en medio de un webhook, con el usuario esperando.
+ *
+ * Lo que sólo necesitan algunas entradas (token de Telegram, claves de
+ * IA) se valida al usarse. Migrar la base no requiere credenciales de
+ * Telegram, y exigirlas obligaría a inventar valores falsos en CI para
+ * que un comando arranque.
  */
 final class Config
 {
     public function __construct(
-        public readonly string $botToken,
-        public readonly string $webhookSecret,
+        private readonly Env $env,
         public readonly string $dsn,
         public readonly string $dbUsuario,
         public readonly string $dbClave,
@@ -35,8 +40,7 @@ final class Config
         $base = $env->requerido('DB_NAME');
 
         return new self(
-            botToken: $env->requerido('TELEGRAM_BOT_TOKEN'),
-            webhookSecret: $env->requerido('TELEGRAM_WEBHOOK_SECRET'),
+            env: $env,
             dsn: "mysql:host={$host};port={$puerto};dbname={$base};charset=utf8mb4",
             dbUsuario: $env->requerido('DB_USER'),
             dbClave: $env->texto('DB_PASS'),
@@ -46,5 +50,21 @@ final class Config
             debug: $env->booleano('APP_DEBUG', false),
             cuotaMensualIa: $env->entero('AI_MONTHLY_QUOTA', 200),
         );
+    }
+
+    public function botToken(): string
+    {
+        return $this->env->requerido('TELEGRAM_BOT_TOKEN');
+    }
+
+    public function webhookSecret(): string
+    {
+        return $this->env->requerido('TELEGRAM_WEBHOOK_SECRET');
+    }
+
+    /** Cadena vacía cuando no está configurada: el proveedor se saltea solo. */
+    public function claveIa(string $variable): string
+    {
+        return $this->env->texto($variable);
     }
 }

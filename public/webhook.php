@@ -42,7 +42,7 @@ try {
 
 $secretoRecibido = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
 
-if (!hash_equals($app->config->webhookSecret, (string) $secretoRecibido)) {
+if (!hash_equals($app->config->webhookSecret(), (string) $secretoRecibido)) {
     http_response_code(403);
     $app->log->advertencia('webhook con secreto inválido', ['ip' => $_SERVER['REMOTE_ADDR'] ?? '?']);
     exit;
