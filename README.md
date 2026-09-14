@@ -90,8 +90,13 @@ la que golpear, y ésa es.
 ```bash
 php bin/migrate.php
 php bin/webhook.php set https://bot.marcosdamiangonzalez.ar/webhook.php
-php bin/webhook.php info
+php bin/doctor.php
 ```
+
+`bin/doctor.php` es el comando a correr ante cualquier duda: verifica versión de
+PHP, extensiones, permisos del `.env`, conexión a la base, migraciones al día,
+configuración y estado real del webhook. Cada falla viene con el remedio al lado,
+porque en hosting compartido no se ve nada de lo que pasa adentro.
 
 4. **Cron horario** para purgar y vigilar que el bot siga recibiendo mensajes:
 
