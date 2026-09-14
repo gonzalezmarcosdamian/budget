@@ -268,6 +268,20 @@ mantiene descartada por la misma razón de antes —atar un proyecto personal a 
 activo de negocio— pero ahora el costo de evitarlo está medido: un alta más en
 cPanel y un registro de DNS.
 
+**Segunda corrección, mejor que las dos anteriores.** La cuenta de WNPower es de
+**revendedor** (usuario WHM `elmundo5`, servidor `cpanel173.wnpservers.net`). Eso
+habilita la opción limpia: **crear una cuenta cPanel propia para el bot**, en vez
+de colgarlo como dominio adicional de la cuenta del negocio.
+
+Con cuenta propia el bot queda aislado de verdad: su propio espacio en disco, su
+propia base, su propio FTP y su propio `.env`. Un problema en `gargonat` no lo
+toca, y al revés tampoco. El aislamiento que el dominio adicional simulaba, acá
+es real.
+
+Además, la cuenta existente tiene **SSH habilitado**, así que las migraciones y
+la verificación post-despliegue se corren de verdad en el servidor en vez de
+programarse a ciegas con un cron.
+
 ---
 
 ## 16. El bot puede morirse en silencio, así que hay que vigilarlo
@@ -289,3 +303,31 @@ puede entregarnos nada. Un mail dependería de otra pieza más.
 **Consecuencias.** El mismo cron purga `updates_seen`. Es la única tarea
 programada del proyecto, y una corrida por hora es suficiente: menos sería
 enterarse tarde, más sería golpear al hosting sin necesidad.
+
+
+---
+
+## 17. PHP no fue una concesión: era la única opción
+
+**Contexto.** La decisión 2 eligió PHP sin dependencias por prudencia ante un
+hosting compartido. Al consultar las *features* de la cuenta por la API de WHM
+aparecieron los números que faltaban:
+
+```
+lvenodejssel  0    (Setup Node.js App / Node.js Selector)
+passengerapps 0    (Application Manager / Passenger)
+ssh           1
+cron          1
+```
+
+**Lo que significa.** Node.js Selector necesita Phusion Passenger para levantar
+un proceso por usuario y hacer de proxy desde Apache; por eso los dos están en
+cero, son la misma dependencia. Y se habilita en **WHM → LVE Manager → Options**,
+que es nivel *root*: un revendedor sólo puede exponer lo que el proveedor ya
+habilitó para su tier. En los planes de WNPower, Node.js aparece recién en
+**Cloud Hosting**, no en el compartido clásico.
+
+**Consecuencia.** Un bot en Node sobre esta cuenta no habría arrancado, ni con
+webhook ni con polling. La decisión de PHP no costó nada y era la única que
+funcionaba. Lo que sí cambia: `ssh 1` y `cron 1` confirman que el despliegue y
+las migraciones se pueden correr y verificar de verdad en el servidor.
