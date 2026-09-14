@@ -403,3 +403,15 @@ aplicadas, `.env` en 0600 y fuera del document root.
 **Detalle que costó una corrida.** Git Bash convierte rutas absolutas al pasarlas
 como argumento: `/usr/local/bin/php` llegó al crontab como
 `C:/Program Files/Git/usr/local/bin/php`. Se resuelve con `MSYS_NO_PATHCONV=1`.
+
+**Y volvió a morder, peor.** El mismo mecanismo transformó `/budget/` en
+`C:/Program Files/Git/budget/` al cargar el secreto `FTP_DIR` con
+`gh secret set --body`. El despliegue **no falló**: creó ese árbol en el servidor
+y publicó ahí durante dos corridas, con CI en verde, mientras la aplicación real
+quedaba con el código viejo. Se descubrió porque una migración no aparecía en el
+servidor; el rastro fue una carpeta llamada `C:` en el home.
+
+Un error silencioso que deja el CI en verde es peor que uno ruidoso, así que la
+lección no quedó sólo escrita: el job de despliegue ahora **valida la ruta**
+antes de subir nada y falla si no empieza con `/` o si parece una ruta de
+Windows. Anotarlo en un documento no alcanzó la primera vez.

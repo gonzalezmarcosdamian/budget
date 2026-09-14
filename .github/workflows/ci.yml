@@ -113,6 +113,24 @@ jobs:
         run: |
           echo "::notice::Despliegue salteado: falta cargar los secretos FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_DIR y WEBHOOK_URL."
 
+      # Git Bash convierte rutas absolutas al pasarlas como argumento, y
+      # "/budget/" llegó a este secreto como "C:/Program Files/Git/budget/".
+      # El despliegue no falló: creó ese árbol en el servidor y publicó ahí
+      # durante dos corridas, mientras la aplicación real quedaba vieja.
+      - name: Validar la ruta de destino
+        if: env.FTP_SERVER != ''
+        env:
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+        run: |
+          case "$FTP_DIR" in
+            /*) ;;
+            *) echo "::error::FTP_DIR tiene que empezar con /. Llegó: $FTP_DIR"; exit 1 ;;
+          esac
+          case "$FTP_DIR" in
+            *:*|*\*) echo "::error::FTP_DIR parece una ruta de Windows: $FTP_DIR"; exit 1 ;;
+          esac
+          echo "Destino válido: $FTP_DIR"
+
       - name: Subir por FTP
         if: env.FTP_SERVER != ''
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
