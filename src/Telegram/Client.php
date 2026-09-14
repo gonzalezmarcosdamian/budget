@@ -93,6 +93,35 @@ final class Client
         return $contenido;
     }
 
+    /**
+     * Trae los updates pendientes en vez de esperar a que Telegram los
+     * entregue. Sólo para desarrollo local: en producción el bot usa
+     * webhook, porque polling necesita un proceso vivo 24/7 y eso no
+     * entra en hosting compartido.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function obtenerUpdates(int $desde, int $esperaSegundos = 25): array
+    {
+        $url = self::BASE . '/bot' . $this->token . '/getUpdates';
+
+        $crudo = $this->pedirCrudo($url, $esperaSegundos + 10, [
+            'offset' => $desde,
+            'timeout' => $esperaSegundos,
+            'allowed_updates' => json_encode(['message', 'callback_query']),
+        ]);
+
+        $decodificado = json_decode($crudo, true);
+
+        if (!is_array($decodificado) || ($decodificado['ok'] ?? false) !== true) {
+            throw new RuntimeException('Telegram rechazó getUpdates: ' . substr($crudo, 0, 200));
+        }
+
+        $resultado = $decodificado['result'] ?? [];
+
+        return is_array($resultado) ? array_values($resultado) : [];
+    }
+
     /** @return array<string,mixed> */
     public function fijarWebhook(string $url, string $secreto): array
     {

@@ -54,6 +54,33 @@ Si 3310 u 8088 están ocupados:
 DB_HOST_PORT=3320 APP_HOST_PORT=8090 docker compose up -d
 ```
 
+## Invitar a alguien
+
+El bot es privado: sin código de invitación no deja darse de alta. Pero no hace
+falta explicarle a nadie que escriba un comando con un código — Telegram resuelve
+eso con un link:
+
+```
+https://t.me/TU_BOT?start=EL_CODIGO
+```
+
+Quien lo toca entra de una. El botón **Iniciar** de Telegram, en cambio, manda
+`/start` pelado y sin código, así que siempre va a rebotar contra el muro de
+"este bot es privado": es el comportamiento correcto, pero conviene repartir el
+link y no el comando.
+
+## Desarrollo sin desplegar nada
+
+```bash
+docker compose exec -e TELEGRAM_BOT_TOKEN=... app php bin/polling.php
+```
+
+Trae los mensajes de Telegram en vez de esperar a recibirlos, y los pasa por el
+**mismo Dispatcher** que usa el webhook. Sirve para probar el bot completo —
+texto, fotos, audios, botones — desde la máquina de desarrollo, sin dominio, sin
+certificado y sin haber desplegado. Sólo para desarrollo: en producción el bot
+usa webhook, porque polling necesita un proceso vivo 24/7.
+
 ## Tests
 
 ```bash
@@ -64,6 +91,10 @@ docker compose exec app php tests/run.php    # + integración contra MariaDB rea
 Los de integración verifican lo que un doble no podría: que un usuario no pueda
 leer el gasto de otro, que un reintento de Telegram no duplique un gasto, y que
 las migraciones corran limpias desde una base vacía.
+
+Corren contra `budget_test`, nunca contra la base de desarrollo: `limpiar()` hace
+TRUNCATE y borraría los gastos cargados a mano para probar. La suite se niega a
+arrancar si la base no termina en `_test`.
 
 ## Despliegue
 

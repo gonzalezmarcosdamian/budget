@@ -22,6 +22,9 @@ services:
       - "${DB_HOST_PORT:-3310}:3306"
     volumes:
       - dbdata:/var/lib/mysql
+      # Crea la base de tests al inicializar el volumen, para que la
+      # suite nunca toque la base de desarrollo.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -39,6 +42,9 @@ services:
       DB_HOST: db
       DB_PORT: "3306"
       DB_NAME: budget
+      # Los tests de integración usan una base aparte: su TRUNCATE
+      # borraría los gastos cargados a mano para probar.
+      TEST_DB_NAME: budget_test
       DB_USER: budget
       DB_PASS: budget
       APP_ENV: local
