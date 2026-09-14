@@ -110,3 +110,31 @@ prueba('el borrador es inmutable al corregirlo', function (): void {
     esIgual('Supermercado', $original?->categoria, 'el original no cambia');
     esIgual('Comida y delivery', $corregido?->categoria);
 });
+
+prueba('se declara incompetente ante una frase con varios gastos', function (): void {
+    // Caso real de producción: el parser respondió con confianza 0.95 y
+    // se quedó con "$30" y un comercio de catorce palabras. Un camino
+    // rápido que no reconoce la estructura tiene que pasar la pelota,
+    // no adivinar.
+    esNulo(parserEn()->parsear(
+        'Me fui de fiesta y gaste 30 mil en estacionamiento y 200 en entradas y 100 en bebidas'
+    ));
+});
+
+prueba('se declara incompetente cuando hay más de un importe', function (): void {
+    esNulo(parserEn()->parsear('200 entradas y 100 bebidas'), 'dos importes');
+    esNulo(parserEn()->parsear('1200 super y 800 nafta'), 'dos gastos cortos');
+});
+
+prueba('se declara incompetente ante una frase larga', function (): void {
+    esNulo(parserEn()->parsear(
+        'hoy estuve dando vueltas por el centro y al final termine gastando 5000'
+    ));
+});
+
+prueba('sigue resolviendo los mensajes cortos de siempre', function (): void {
+    esIgual(120_000, parserEn()->parsear('1200 super')?->monto->centavos);
+    esIgual(2_500_000, parserEn()->parsear('nafta 25k')?->monto->centavos);
+    esIgual(4_500_000, parserEn()->parsear('gasté 45 lucas en la prepaga')?->monto->centavos);
+    esIgual(3_000_000, parserEn()->parsear('30 mil estacionamiento')?->monto->centavos, 'mil como palabra');
+});

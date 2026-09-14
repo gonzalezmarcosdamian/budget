@@ -82,3 +82,23 @@ prueba('calcula el porcentaje sobre un total', function (): void {
     esIgual(80, Money::deCentavos(8_000)->porcentajeDe(Money::deCentavos(10_000)));
     esIgual(0, Money::deCentavos(100)->porcentajeDe(Money::deCentavos(0)), 'total cero no divide');
 });
+
+prueba('entiende "mil" escrito como palabra', function (): void {
+    // Producción, 14/09/2026: "gaste 30 mil" se guardó como $30.
+    esIgual(3_000_000, Money::parsear('30 mil')?->centavos, '30 mil');
+    esIgual(3_000_000, Money::parsear('gaste 30 mil en estacionamiento')?->centavos, 'en una frase');
+    esIgual(150_000, Money::parsear('1,5 mil')?->centavos, 'con decimal');
+});
+
+prueba('"mil" no le roba el match a "millones"', function (): void {
+    esIgual(200_000_000, Money::parsear('2 millones')?->centavos, 'millones');
+    esIgual(200_000_000, Money::parsear('2 palos')?->centavos, 'palos');
+});
+
+prueba('enumera todos los importes de un texto', function (): void {
+    // Es lo que permite al parser rápido darse cuenta de que el mensaje
+    // trae varios gastos y no le corresponde a él.
+    esIgual(3, count(Money::tokensNumericos('30 mil estacionamiento, 200 entradas y 100 bebidas')));
+    esIgual(1, count(Money::tokensNumericos('1200 super')));
+    esIgual(0, count(Money::tokensNumericos('hola que tal')));
+});

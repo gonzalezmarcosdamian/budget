@@ -51,14 +51,16 @@ final class GeminiProvider implements LlmProvider
         return in_array($tarea, [self::TAREA_TEXTO, self::TAREA_IMAGEN, self::TAREA_AUDIO], true);
     }
 
-    public function extraerDeTexto(string $texto): ?Extraction
+    /** @return list<Extraction> */
+    public function extraerDeTexto(string $texto): array
     {
         return $this->generar([
             ['text' => Prompt::paraTexto($texto, $this->hoy())],
         ]);
     }
 
-    public function extraerDeImagen(string $binario, string $mimeType, string $epigrafe = ''): ?Extraction
+    /** @return list<Extraction> */
+    public function extraerDeImagen(string $binario, string $mimeType, string $epigrafe = ''): array
     {
         return $this->generar([
             ['text' => Prompt::paraImagen($epigrafe, $this->hoy())],
@@ -66,7 +68,8 @@ final class GeminiProvider implements LlmProvider
         ]);
     }
 
-    public function extraerDeAudio(string $binario, string $mimeType): ?Extraction
+    /** @return list<Extraction> */
+    public function extraerDeAudio(string $binario, string $mimeType): array
     {
         return $this->generar([
             ['text' => Prompt::paraAudio($this->hoy())],
@@ -74,8 +77,11 @@ final class GeminiProvider implements LlmProvider
         ]);
     }
 
-    /** @param list<array<string,mixed>> $partes */
-    private function generar(array $partes): ?Extraction
+    /**
+     * @param list<array<string,mixed>> $partes
+     * @return list<Extraction>
+     */
+    private function generar(array $partes): array
     {
         if (!$this->disponible()) {
             throw new RuntimeException('Falta GEMINI_API_KEY');
@@ -96,7 +102,7 @@ final class GeminiProvider implements LlmProvider
         $json = self::primerTexto($respuesta);
 
         if ($json === null) {
-            return null;
+            return [];
         }
 
         $datos = json_decode($json, true);
@@ -105,7 +111,7 @@ final class GeminiProvider implements LlmProvider
             throw new RuntimeException('Gemini devolvió algo que no es JSON');
         }
 
-        return Extraction::desdeJson($datos, $this->nombre(), $this->modelo);
+        return Extraction::variasDesdeJson($datos, $this->nombre(), $this->modelo);
     }
 
     /** @param array<string,mixed> $respuesta */

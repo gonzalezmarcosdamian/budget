@@ -50,10 +50,15 @@ final class CategoryGuesser
             'dentista', 'odontologo', 'medico', 'analisis',
             'kinesiologia', 'psicologo', 'optica',
         ],
+        'Salidas y fiestas' => [
+            'fiesta', 'fiestas', 'salida', 'salidas', 'previa', 'after',
+            'boliche', 'bar', 'pub', 'cumpleanos', 'cumple', 'casamiento',
+            'recital', 'entrada', 'entradas', 'bebida', 'bebidas', 'tragos',
+            'birra', 'birras', 'cerveza', 'fernet', 'vino', 'brindis',
+        ],
         'Entretenimiento' => [
-            'cine', 'teatro', 'recital', 'entrada', 'boliche',
-            'steam', 'playstation', 'xbox', 'libro', 'gimnasio',
-            'gym', 'padel', 'futbol',
+            'cine', 'teatro', 'steam', 'playstation', 'xbox', 'libro',
+            'gimnasio', 'gym', 'padel', 'futbol',
         ],
         'Compras' => [
             'ropa', 'zapatillas', 'zara', 'mercadolibre', 'meli',

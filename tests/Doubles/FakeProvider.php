@@ -19,34 +19,41 @@ final class FakeProvider implements LlmProvider
 {
     public int $llamadas = 0;
 
+    /** @param list<float> $montosQueDevuelve */
     private function __construct(
         private readonly string $nombre,
         private readonly string $modelo,
         private readonly bool $disponible,
         private readonly ?string $errorQueLanza,
-        private readonly ?float $montoQueDevuelve,
+        private readonly array $montosQueDevuelve,
     ) {
     }
 
     public static function queFunciona(string $modelo, float $monto = 1000.0): self
     {
-        return new self('falso', $modelo, true, null, $monto);
+        return new self('falso', $modelo, true, null, [$monto]);
+    }
+
+    /** @param list<float> $montos */
+    public static function queDevuelveVarios(string $modelo, array $montos): self
+    {
+        return new self('falso', $modelo, true, null, $montos);
     }
 
     public static function queFalla(string $modelo, string $error = 'El proveedor respondió 503'): self
     {
-        return new self('falso', $modelo, true, $error, null);
+        return new self('falso', $modelo, true, $error, []);
     }
 
     public static function sinClave(string $modelo): self
     {
-        return new self('falso', $modelo, false, null, null);
+        return new self('falso', $modelo, false, null, []);
     }
 
     /** Responde bien pero no encuentra ningún gasto: no es una falla. */
     public static function queNoEncuentraNada(string $modelo): self
     {
-        return new self('falso', $modelo, true, null, null);
+        return new self('falso', $modelo, true, null, []);
     }
 
     public function nombre(): string
@@ -69,22 +76,26 @@ final class FakeProvider implements LlmProvider
         return true;
     }
 
-    public function extraerDeTexto(string $texto): ?Extraction
+    /** @return list<Extraction> */
+    public function extraerDeTexto(string $texto): array
     {
         return $this->responder();
     }
 
-    public function extraerDeImagen(string $binario, string $mimeType, string $epigrafe = ''): ?Extraction
+    /** @return list<Extraction> */
+    public function extraerDeImagen(string $binario, string $mimeType, string $epigrafe = ''): array
     {
         return $this->responder();
     }
 
-    public function extraerDeAudio(string $binario, string $mimeType): ?Extraction
+    /** @return list<Extraction> */
+    public function extraerDeAudio(string $binario, string $mimeType): array
     {
         return $this->responder();
     }
 
-    private function responder(): ?Extraction
+    /** @return list<Extraction> */
+    private function responder(): array
     {
         $this->llamadas++;
 
@@ -92,19 +103,16 @@ final class FakeProvider implements LlmProvider
             throw new RuntimeException($this->errorQueLanza);
         }
 
-        if ($this->montoQueDevuelve === null) {
-            return null;
-        }
-
-        return Extraction::desdeJson(
-            [
-                'monto' => $this->montoQueDevuelve,
+        $gastos = array_map(
+            fn (float $monto): array => [
+                'monto' => $monto,
                 'comercio' => 'Comercio de prueba',
                 'categoria' => 'Otros',
                 'confianza' => 0.9,
             ],
-            $this->nombre,
-            $this->modelo
+            $this->montosQueDevuelve
         );
+
+        return Extraction::variasDesdeJson(['gastos' => $gastos], $this->nombre, $this->modelo);
     }
 }

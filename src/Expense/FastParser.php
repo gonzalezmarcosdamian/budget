@@ -19,13 +19,22 @@ final class FastParser
 {
     private const LARGO_MAXIMO_COMERCIO = 160;
 
+    /**
+     * A partir de acá el mensaje ya no es una anotación rápida sino una
+     * frase, y la frase es trabajo del modelo.
+     *
+     * El valor sale de los mensajes que sí tiene que resolver: "gasté 45
+     * lucas en la prepaga" son seis palabras.
+     */
+    private const MAXIMO_PALABRAS = 8;
+
     /** Palabras que no aportan al nombre del comercio. */
     private const RELLENO = [
         'gaste', 'gasté', 'pague', 'pagué', 'compre', 'compré', 'puse', 'saque', 'saqué',
         'de', 'del', 'en', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
         'por', 'con', 'para', 'mi', 'al', 'a', 'y',
         'k', 'luca', 'lucas', 'palo', 'palos', 'millon', 'millón', 'millones',
-        'peso', 'pesos', 'mango', 'mangos', 'ars',
+        'mil', 'miles', 'peso', 'pesos', 'mango', 'mangos', 'ars',
     ];
 
     /** Frase relativa => días hacia atrás. Se evalúan en orden. */
@@ -72,7 +81,7 @@ final class FastParser
     {
         $limpio = trim($texto);
 
-        if ($limpio === '') {
+        if ($limpio === '' || !self::esDeMiIncumbencia($limpio)) {
             return null;
         }
 
@@ -96,6 +105,31 @@ final class FastParser
             confianza: $comercio === '' ? 0.60 : 0.95,
             modelo: 'regex',
         );
+    }
+
+    /**
+     * El camino rápido tiene que ser angosto.
+     *
+     * En producción (14/09/2026) esta clase respondió con confianza 0.95
+     * a "Me fui de fiesta y gaste 30 mil en estacionamiento y 200 en
+     * entradas y 100 en bebidas": se quedó con el primer número, armó un
+     * comercio de catorce palabras y, por declararse confiada, impidió
+     * que el mensaje llegara al modelo.
+     *
+     * Reconocer la propia incompetencia vale más que adivinar: devolver
+     * null acá es lo que deja pasar el mensaje a la IA.
+     */
+    private static function esDeMiIncumbencia(string $texto): bool
+    {
+        // Varios importes suelen ser varios gastos en un mismo mensaje,
+        // y el camino rápido sólo sabe proponer uno.
+        if (count(Money::tokensNumericos($texto)) > 1) {
+            return false;
+        }
+
+        $palabras = preg_split('/\s+/u', $texto) ?: [];
+
+        return count($palabras) <= self::MAXIMO_PALABRAS;
     }
 
     private function resolverFecha(string $texto): \DateTimeImmutable

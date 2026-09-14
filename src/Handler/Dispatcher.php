@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Budget\Handler;
 
+use Budget\Ai\Extraction;
 use Budget\Ai\Router;
 use Budget\Expense\Draft;
 use Budget\Expense\FastParser;
@@ -122,13 +123,10 @@ final class Dispatcher
 
     private function manejarTexto(int $userId, Update $update): void
     {
-        $borrador = $this->parser->parsear($update->texto);
+        $rapido = $this->parser->parsear($update->texto);
+        $borradores = $rapido !== null ? [$rapido] : $this->extraerConIa($userId, $update);
 
-        if ($borrador === null) {
-            $borrador = $this->extraerConIa($userId, $update);
-        }
-
-        if ($borrador === null) {
+        if ($borradores === []) {
             $this->telegram->enviarMensaje(
                 $update->chatId,
                 'No encontré un importe ahí. Probá con algo como <code>1200 super</code>.'
@@ -137,7 +135,7 @@ final class Dispatcher
             return;
         }
 
-        $this->proponer($userId, $update->chatId, $borrador);
+        $this->proponerVarios($userId, $update->chatId, $borradores);
     }
 
     private function manejarImagen(int $userId, Update $update): void
@@ -164,7 +162,7 @@ final class Dispatcher
         );
     }
 
-    /** @param callable(string,string): mixed $extraer */
+    /** @param callable(string,string): list<Extraction> $extraer */
     private function desdeArchivo(
         int $userId,
         Update $update,
@@ -180,7 +178,7 @@ final class Dispatcher
 
         try {
             $binario = $this->telegram->descargarArchivo($update->fileId);
-            $extraccion = $extraer($binario, $mimeType);
+            $extracciones = $extraer($binario, $mimeType);
         } catch (\Throwable $e) {
             $this->log->excepcion($e, 'extracción desde archivo');
             $this->telegram->enviarMensaje(
@@ -191,7 +189,7 @@ final class Dispatcher
             return;
         }
 
-        if ($extraccion === null) {
+        if ($extracciones === []) {
             $this->telegram->enviarMensaje(
                 $update->chatId,
                 'No encontré un gasto ahí. Si el ticket salió borroso, probá otra foto.'
@@ -200,18 +198,50 @@ final class Dispatcher
             return;
         }
 
-        $this->proponer($userId, $update->chatId, $extraccion->aBorrador($fuente, $this->reloj->ahora()));
+        $ahora = $this->reloj->ahora();
+        $borradores = array_map(
+            static fn (Extraction $e): Draft => $e->aBorrador($fuente, $ahora),
+            $extracciones
+        );
+
+        $this->proponerVarios($userId, $update->chatId, $borradores);
     }
 
-    private function extraerConIa(int $userId, Update $update): ?Draft
+    /** @return list<Draft> */
+    private function extraerConIa(int $userId, Update $update): array
     {
         if (!$this->ia->hayProveedores() || !$this->puedeUsarIa($userId, $update->chatId)) {
-            return null;
+            return [];
         }
 
-        $extraccion = $this->ia->texto($userId, $update->texto);
+        $this->telegram->enviarAccion($update->chatId);
+        $ahora = $this->reloj->ahora();
 
-        return $extraccion?->aBorrador(Draft::FUENTE_TEXTO, $this->reloj->ahora());
+        return array_map(
+            static fn (Extraction $e): Draft => $e->aBorrador(Draft::FUENTE_TEXTO, $ahora),
+            $this->ia->texto($userId, $update->texto)
+        );
+    }
+
+    /**
+     * Un mensaje puede describir varios gastos. Se avisa cuántos antes de
+     * mandar las tarjetas: si no, aparecen tres mensajes seguidos sin
+     * explicación y parece que el bot se trabó.
+     *
+     * @param list<Draft> $borradores
+     */
+    private function proponerVarios(int $userId, int $chatId, array $borradores): void
+    {
+        if (count($borradores) > 1) {
+            $this->telegram->enviarMensaje(
+                $chatId,
+                sprintf('Encontré <b>%d gastos</b> en ese mensaje. Confirmá los que estén bien:', count($borradores))
+            );
+        }
+
+        foreach ($borradores as $borrador) {
+            $this->proponer($userId, $chatId, $borrador);
+        }
     }
 
     private function puedeUsarIa(int $userId, int $chatId): bool

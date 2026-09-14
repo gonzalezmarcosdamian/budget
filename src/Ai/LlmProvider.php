@@ -27,13 +27,20 @@ interface LlmProvider
     public function soporta(string $tarea): bool;
 
     /**
-     * Devuelve null cuando el modelo no encontró un gasto. Las fallas
+     * Devuelve la lista de gastos que encontró, vacía si no encontró
+     * ninguno. Un mensaje puede describir varios.
+     *
+     * La lista vacía es una respuesta válida, no una falla: las fallas
      * técnicas se lanzan como excepción para que el Router pase al
      * siguiente proveedor.
+     *
+     * @return list<Extraction>
      */
-    public function extraerDeTexto(string $texto): ?Extraction;
+    public function extraerDeTexto(string $texto): array;
 
-    public function extraerDeImagen(string $binario, string $mimeType, string $epigrafe = ''): ?Extraction;
+    /** @return list<Extraction> */
+    public function extraerDeImagen(string $binario, string $mimeType, string $epigrafe = ''): array;
 
-    public function extraerDeAudio(string $binario, string $mimeType): ?Extraction;
+    /** @return list<Extraction> */
+    public function extraerDeAudio(string $binario, string $mimeType): array;
 }

@@ -15,7 +15,8 @@ final class Prompt
     /** Categorías válidas: el modelo tiene que elegir de esta lista y no inventar. */
     public const CATEGORIAS = [
         'Supermercado', 'Comida y delivery', 'Transporte', 'Servicios',
-        'Hogar', 'Salud', 'Entretenimiento', 'Compras', 'Educación', 'Otros',
+        'Hogar', 'Salud', 'Salidas y fiestas', 'Entretenimiento',
+        'Compras', 'Educación', 'Otros',
     ];
 
     public static function instruccion(string $hoyIso): string
@@ -24,13 +25,20 @@ final class Prompt
 
         return <<<TEXTO
         Sos un extractor de gastos para un bot argentino de finanzas personales.
-        Devolvés únicamente un objeto JSON, sin texto alrededor y sin markdown.
+        Devolvés únicamente un objeto JSON, sin texto alrededor y sin markdown,
+        con esta forma:
 
-        Campos:
+        {"gastos": [ {gasto}, {gasto}, ... ]}
+
+        Un mensaje puede describir VARIOS gastos: "gasté 30 mil en
+        estacionamiento y 200 en entradas" son dos gastos distintos, no uno.
+        Devolvé uno por cada importe que la persona menciona.
+
+        Cada gasto tiene:
         - monto: número decimal, sin separador de miles y con punto decimal. Obligatorio.
         - moneda: "ARS" o "USD". Si no se aclara, "ARS".
-        - comercio: nombre del negocio. Cadena vacía si no aparece.
-        - fecha: "YYYY-MM-DD". Si el ticket no la trae, null.
+        - comercio: qué se pagó o dónde. Cadena vacía si no aparece.
+        - fecha: "YYYY-MM-DD". Si no se puede saber, null.
         - categoria: exactamente una de: {$categorias}
         - medio_pago: "Efectivo", "Débito", "Crédito", "Visa", "Mastercard",
           "Transferencia", "Mercado Pago", "QR" o cadena vacía.
@@ -41,8 +49,10 @@ final class Prompt
         - En un ticket, el monto es el TOTAL, no un ítem suelto ni el subtotal.
         - Los importes argentinos usan punto de miles y coma decimal:
           "18.450,75" son dieciocho mil cuatrocientos cincuenta con setenta y cinco.
-        - Jerga: "luca" = mil, "palo" = millón, "25k" = 25000.
-        - Si no encontrás un importe, devolvé {"monto": null}.
+        - Jerga: "luca" y "mil" = 1000, "palo" = millón, "25k" = 25000.
+        - Una aclaración como "son miles de pesos" o "todo en miles" aplica a
+          TODOS los importes del mensaje: "200" pasa a ser 200000.
+        - Si no encontrás ningún importe, devolvé {"gastos": []}.
         - No inventes datos que no estén: es preferible una confianza baja.
         TEXTO;
     }
@@ -64,6 +74,6 @@ final class Prompt
     public static function paraAudio(string $hoyIso): string
     {
         return self::instruccion($hoyIso)
-            . "\n\nEscuchá el audio y extraé el gasto que describe la persona.";
+            . "\n\nEscuchá el audio y extraé los gastos que describe la persona.";
     }
 }

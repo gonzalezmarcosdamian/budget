@@ -38,35 +38,41 @@ final class Router
         return $this->cadena !== [];
     }
 
-    public function texto(int $userId, string $mensaje): ?Extraction
+    /** @return list<Extraction> */
+    public function texto(int $userId, string $mensaje): array
     {
         return $this->intentar(
             $userId,
             LlmProvider::TAREA_TEXTO,
-            static fn (LlmProvider $p): ?Extraction => $p->extraerDeTexto($mensaje)
+            static fn (LlmProvider $p): array => $p->extraerDeTexto($mensaje)
         );
     }
 
-    public function imagen(int $userId, string $binario, string $mimeType, string $epigrafe = ''): ?Extraction
+    /** @return list<Extraction> */
+    public function imagen(int $userId, string $binario, string $mimeType, string $epigrafe = ''): array
     {
         return $this->intentar(
             $userId,
             LlmProvider::TAREA_IMAGEN,
-            static fn (LlmProvider $p): ?Extraction => $p->extraerDeImagen($binario, $mimeType, $epigrafe)
+            static fn (LlmProvider $p): array => $p->extraerDeImagen($binario, $mimeType, $epigrafe)
         );
     }
 
-    public function audio(int $userId, string $binario, string $mimeType): ?Extraction
+    /** @return list<Extraction> */
+    public function audio(int $userId, string $binario, string $mimeType): array
     {
         return $this->intentar(
             $userId,
             LlmProvider::TAREA_AUDIO,
-            static fn (LlmProvider $p): ?Extraction => $p->extraerDeAudio($binario, $mimeType)
+            static fn (LlmProvider $p): array => $p->extraerDeAudio($binario, $mimeType)
         );
     }
 
-    /** @param callable(LlmProvider): ?Extraction $operacion */
-    private function intentar(int $userId, string $tarea, callable $operacion): ?Extraction
+    /**
+     * @param callable(LlmProvider): list<Extraction> $operacion
+     * @return list<Extraction>
+     */
+    private function intentar(int $userId, string $tarea, callable $operacion): array
     {
         foreach ($this->cadena as $proveedor) {
             if (!$proveedor->soporta($tarea)) {
@@ -79,7 +85,7 @@ final class Router
                 $resultado = $operacion($proveedor);
                 $this->registrar($userId, $proveedor, $tarea, $inicio, true, '');
 
-                // Que el modelo no encuentre un gasto es una respuesta
+                // Que el modelo no encuentre ningún gasto es una respuesta
                 // válida, no una falla: no se reintenta con el siguiente.
                 return $resultado;
             } catch (Throwable $e) {
@@ -92,7 +98,7 @@ final class Router
             }
         }
 
-        return null;
+        return [];
     }
 
     private function registrar(

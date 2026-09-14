@@ -37,10 +37,10 @@ prueba('[db] un 503 baja al siguiente modelo de la cadena', function (): void {
     $caido = FakeProvider::queFalla('modelo-saturado');
     $sano = FakeProvider::queFunciona('modelo-lite', 1234.0);
 
-    $extraccion = routerCon([$caido, $sano])->texto(1, 'gasté 1234');
+    $extracciones = routerCon([$caido, $sano])->texto(1, 'gasté 1234');
 
-    noEsNulo($extraccion, 'el usuario recibe su gasto igual');
-    esIgual(123_400, $extraccion?->monto->centavos);
+    esIgual(1, count($extracciones), 'el usuario recibe su gasto igual');
+    esIgual(123_400, $extracciones[0]->monto->centavos);
     esIgual(1, $caido->llamadas, 'el caído se intentó una vez');
     esIgual(1, $sano->llamadas, 'y el siguiente resolvió');
 });
@@ -70,7 +70,7 @@ prueba('[db] que el modelo no encuentre un gasto no dispara el respaldo', functi
 
     // "Acá no hay ningún gasto" es una respuesta válida, no una falla.
     // Reintentar con otro modelo sólo gastaría cupo para llegar a lo mismo.
-    esNulo(routerCon([$primero, $segundo])->texto(1, 'hola que tal'));
+    esIgual([], routerCon([$primero, $segundo])->texto(1, 'hola que tal'));
     esIgual(0, $segundo->llamadas, 'el segundo ni se intenta');
 });
 
@@ -80,7 +80,7 @@ prueba('[db] un proveedor sin clave no entra en la cadena', function (): void {
     $sinClave = FakeProvider::sinClave('modelo-sin-configurar');
     $router = routerCon([$sinClave, FakeProvider::queFunciona('modelo-lite')]);
 
-    noEsNulo($router->texto(1, 'gasté 500'));
+    esIgual(1, count($router->texto(1, 'gasté 500')));
     esIgual(0, $sinClave->llamadas, 'no se intenta siquiera');
     esIgual(1, count(filasDeIa()), 'y no ensucia las métricas');
 });
@@ -91,10 +91,10 @@ prueba('[db] sin ningún proveedor disponible el router lo dice', function (): v
     $router = routerCon([FakeProvider::sinClave('a'), FakeProvider::sinClave('b')]);
 
     afirmar(!$router->hayProveedores(), 'el Dispatcher usa esto para no prometer IA');
-    esNulo($router->texto(1, 'gasté 500'));
+    esIgual([], $router->texto(1, 'gasté 500'));
 });
 
-prueba('[db] si toda la cadena falla devuelve null en vez de explotar', function (): void {
+prueba('[db] si toda la cadena falla devuelve vacío en vez de explotar', function (): void {
     TestDatabase::limpiar();
 
     // El usuario mandó una foto y espera un gasto: que se caigan todos
@@ -104,6 +104,22 @@ prueba('[db] si toda la cadena falla devuelve null en vez de explotar', function
         FakeProvider::queFalla('dos'),
     ]);
 
-    esNulo($router->imagen(1, 'binario', 'image/jpeg'));
+    esIgual([], $router->imagen(1, 'binario', 'image/jpeg'));
     esIgual(2, count(filasDeIa()), 'los dos fallos quedan registrados');
+});
+
+prueba('[db] un mensaje puede traer varios gastos', function (): void {
+    TestDatabase::limpiar();
+
+    // El caso que rompió en producción: "30 mil en estacionamiento y 200
+    // en entradas y 100 en bebidas" son tres gastos, no uno.
+    $extracciones = routerCon([
+        FakeProvider::queDevuelveVarios('modelo-lite', [30000.0, 200000.0, 100000.0]),
+    ])->texto(1, 'me fui de fiesta');
+
+    esIgual(3, count($extracciones));
+    esIgual(3_000_000, $extracciones[0]->monto->centavos);
+    esIgual(20_000_000, $extracciones[1]->monto->centavos);
+    esIgual(10_000_000, $extracciones[2]->monto->centavos);
+    esIgual(1, count(filasDeIa()), 'los tres salen de una sola llamada');
 });

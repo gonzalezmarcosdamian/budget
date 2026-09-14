@@ -15,6 +15,12 @@ use DateTimeImmutable;
  */
 final class Extraction
 {
+    /**
+     * Tope de gastos por mensaje. Existe para que un modelo que se
+     * desboca no produzca cincuenta tarjetas en el chat.
+     */
+    private const MAXIMO_POR_MENSAJE = 10;
+
     private function __construct(
         public readonly Money $monto,
         public readonly string $comercio,
@@ -59,6 +65,49 @@ final class Extraction
             proveedor: $proveedor,
             modelo: $modelo,
         );
+    }
+
+    /**
+     * Los gastos de un mensaje. Un mensaje puede describir varios:
+     * "30 mil de estacionamiento y 200 de entradas" son dos.
+     *
+     * Tolera que el modelo devuelva un objeto suelto en vez del
+     * envoltorio: pasa cuando hay un único gasto.
+     *
+     * @param array<string,mixed> $datos
+     * @return list<self>
+     */
+    public static function variasDesdeJson(
+        array $datos,
+        string $proveedor,
+        string $modelo,
+        string $monedaPorDefecto = Money::MONEDA_POR_DEFECTO
+    ): array {
+        $crudos = $datos['gastos'] ?? null;
+
+        if (!is_array($crudos)) {
+            $crudos = [$datos];
+        }
+
+        $extracciones = [];
+
+        foreach ($crudos as $crudo) {
+            if (!is_array($crudo)) {
+                continue;
+            }
+
+            $una = self::desdeJson($crudo, $proveedor, $modelo, $monedaPorDefecto);
+
+            if ($una !== null) {
+                $extracciones[] = $una;
+            }
+
+            if (count($extracciones) >= self::MAXIMO_POR_MENSAJE) {
+                break;
+            }
+        }
+
+        return $extracciones;
     }
 
     public function aBorrador(string $fuente, DateTimeImmutable $siNoHayFecha): Draft

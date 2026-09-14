@@ -20,12 +20,24 @@ final class Money
 
     private const CENTAVOS_POR_UNIDAD = 100;
 
-    /** Multiplicadores de jerga, evaluados en orden. */
+    /**
+     * Multiplicadores de jerga, evaluados en orden.
+     *
+     * El orden importa: "millones" va antes que "mil", porque si no
+     * "2 millones" se leería como dos mil.
+     */
     private const MULTIPLICADORES = [
         '/\b(?:palos?|millones?|mill[oó]n)\b/u' => 1_000_000,
         '/\b(?:lucas?|mangos? de mil)\b/u' => 1_000,
+        '/\bmil(?:es)?\b/u' => 1_000,
         '/(?<=\d)\s*k\b/u' => 1_000,
     ];
+
+    /**
+     * Los formatos con separador de miles van primero, para que "18.450"
+     * no matchee como "18" seguido de basura.
+     */
+    private const PATRON_NUMERO = '/\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?/u';
 
     private function __construct(
         public readonly int $centavos,
@@ -137,15 +149,24 @@ final class Money
      */
     public static function tokenNumerico(string $texto): ?string
     {
-        // Primero los formatos con separador de miles, para que "18.450"
-        // no matchee como "18" seguido de basura.
-        $patron = '/\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?/u';
+        return self::tokensNumericos($texto)[0] ?? null;
+    }
 
-        if (preg_match($patron, $texto, $coincidencias) !== 1) {
-            return null;
+    /**
+     * Todos los importes que aparecen en el texto.
+     *
+     * Con más de uno, el mensaje probablemente describe varios gastos y
+     * no le corresponde al camino rápido.
+     *
+     * @return list<string>
+     */
+    public static function tokensNumericos(string $texto): array
+    {
+        if (preg_match_all(self::PATRON_NUMERO, $texto, $coincidencias) === false) {
+            return [];
         }
 
-        return $coincidencias[0];
+        return array_values($coincidencias[0]);
     }
 
     private static function multiplicador(string $texto): int
