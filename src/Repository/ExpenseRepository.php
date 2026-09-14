@@ -163,8 +163,7 @@ final class ExpenseRepository
              WHERE e.user_id = ? AND e.estado = ? AND e.contraparte IS NOT NULL
                AND e.fecha BETWEEN ? AND ?
              GROUP BY e.contraparte
-             HAVING enviado > 0 OR recibido > 0
-             ORDER BY (enviado - recibido) DESC"
+             ORDER BY SUM(CASE WHEN e.tipo = 'gasto' THEN e.monto_ars ELSE -e.monto_ars END) DESC"
         );
         $sentencia->execute([
             $userId,

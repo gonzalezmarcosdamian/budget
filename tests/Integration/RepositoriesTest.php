@@ -252,3 +252,44 @@ prueba('[db] un usuario no puede confirmar el lote de otro', function (): void {
     esIgual(0, $gastos->resumenDeLote($beto, $lote)['cantidad'], 'ni lo ve');
     esIgual(1, $gastos->confirmarLote($ana, $lote), 'la dueña sí');
 });
+
+prueba('[db] el neto por contraparte suma las dos puntas', function (): void {
+    // Este test existe porque la consulta se desplegó rota: MariaDB no
+    // acepta el alias de un agregado dentro de una expresión en ORDER BY,
+    // y /mes fallaba con un PDOException en producción. Los unitarios no
+    // lo podían ver: el error vive en el SQL.
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario();
+    $dia = new DateTimeImmutable('2026-09-14');
+    $pdo = TestDatabase::pdo();
+
+    $enviado = $gastos->guardarBorrador($ana, borradorDe(100_000, 'Pascual'), null);
+    $gastos->confirmar($ana, $enviado);
+    $pdo->exec("UPDATE expenses SET contraparte = '999' WHERE id = {$enviado}");
+
+    $recibido = $gastos->guardarBorrador($ana, borradorDe(70_000, 'Pascual'), null);
+    $gastos->confirmar($ana, $recibido);
+    $pdo->exec("UPDATE expenses SET contraparte = '999', tipo = 'ingreso' WHERE id = {$recibido}");
+
+    $netos = $gastos->netoPorContraparte($ana, $dia, $dia);
+
+    esIgual(1, count($netos));
+    esIgual('100000.00', $netos[0]['enviado']->aDecimal());
+    esIgual('70000.00', $netos[0]['recibido']->aDecimal());
+    esIgual(3_000_000, $netos[0]['neto'], 'el neto es la resta en centavos, no el total enviado');
+});
+
+prueba('[db] el neto no cruza usuarios', function (): void {
+    TestDatabase::limpiar();
+    $gastos = new ExpenseRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario('Ana');
+    $beto = nuevoUsuario('Beto');
+    $dia = new DateTimeImmutable('2026-09-14');
+
+    $id = $gastos->guardarBorrador($ana, borradorDe(50_000, 'X'), null);
+    $gastos->confirmar($ana, $id);
+    TestDatabase::pdo()->exec("UPDATE expenses SET contraparte = '888' WHERE id = {$id}");
+
+    esIgual([], $gastos->netoPorContraparte($beto, $dia, $dia));
+});
