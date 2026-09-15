@@ -133,3 +133,37 @@ prueba('un gasto con un mes adentro sigue siendo un gasto', function (): void {
     esNulo(pregunta('1200 super'));
     esNulo(Pregunta::desde('nafta 25k', new CategoryGuesser(), new DateTimeImmutable()));
 });
+
+prueba('una pregunta con un año adentro no es un gasto de $2.026', function (): void {
+    // El bug tal como llegó: "pasame detalle de agosto 2026" tiene un
+    // número, así que el parser rápido lo tomaba por un importe y el
+    // bot ofrecía cargar un gasto de $2.026.
+    $hoy = new DateTimeImmutable('2026-09-15');
+
+    foreach ([
+        'pasame detalle de agosto 2026',
+        'dame el detalle de agosto 2026',
+        'pasame agosto',
+        'mostrame el mes pasado',
+        'quiero ver julio 2026',
+    ] as $frase) {
+        noEsNulo(Pregunta::desde($frase, new CategoryGuesser(), $hoy), $frase);
+    }
+});
+
+prueba('una marca debil sin periodo sigue siendo un gasto', function (): void {
+    // "Dame 5000 de nafta" es un gasto: si "dame" alcanzara para
+    // convertirlo en pregunta, el bot dejaría de cargar gastos.
+    $hoy = new DateTimeImmutable('2026-09-15');
+
+    esNulo(Pregunta::desde('dame 5000 de nafta', new CategoryGuesser(), $hoy));
+    esNulo(Pregunta::desde('pasame 1200 super', new CategoryGuesser(), $hoy));
+    esNulo(Pregunta::desde('detalle de compra 3500', new CategoryGuesser(), $hoy));
+});
+
+prueba('una marca fuerte no necesita periodo', function (): void {
+    $hoy = new DateTimeImmutable('2026-09-15');
+
+    noEsNulo(Pregunta::desde('cuanto gaste en delivery', new CategoryGuesser(), $hoy));
+    noEsNulo(Pregunta::desde('en que se me va la plata?', new CategoryGuesser(), $hoy));
+});

@@ -139,21 +139,24 @@ final class Dispatcher
 
     private function manejarTexto(int $userId, Update $update): void
     {
+        // Primero la pregunta y después el gasto, y el orden no es un
+        // detalle: "pasame el detalle de agosto 2026" tiene un número
+        // adentro, así que el parser rápido lo tomaba por un gasto de
+        // $2.026 y la pregunta no se miraba nunca.
+        $pregunta = Pregunta::desde($update->texto, new CategoryGuesser(), $this->reloj->ahora());
+
+        if ($pregunta !== null) {
+            $this->telegram->enviarMensaje(
+                $update->chatId,
+                $this->reportes->responder($userId, $pregunta, $this->reloj->ahora())
+            );
+
+            return;
+        }
+
         $rapido = $this->parser->parsear($update->texto);
 
-        // Antes de intentar extraer un gasto: puede ser una pregunta
-        // sobre lo que ya está cargado, y contestarla es gratis.
         if ($rapido === null) {
-            $pregunta = Pregunta::desde($update->texto, new CategoryGuesser(), $this->reloj->ahora());
-
-            if ($pregunta !== null) {
-                $this->telegram->enviarMensaje(
-                    $update->chatId,
-                    $this->reportes->responder($userId, $pregunta, $this->reloj->ahora())
-                );
-
-                return;
-            }
         }
 
         $borradores = $rapido !== null ? [$rapido] : $this->extraerConIa($userId, $update);

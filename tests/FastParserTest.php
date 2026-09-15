@@ -138,3 +138,30 @@ prueba('sigue resolviendo los mensajes cortos de siempre', function (): void {
     esIgual(4_500_000, parserEn()->parsear('gasté 45 lucas en la prepaga')?->monto->centavos);
     esIgual(3_000_000, parserEn()->parsear('30 mil estacionamiento')?->monto->centavos, 'mil como palabra');
 });
+
+prueba('el parser rapido ve un importe donde hay un año, y por eso el orden importa', function (): void {
+    // "pasame detalle de agosto 2026" tiene un número suelto, así que el
+    // parser lo toma por un importe de $2.026. No está mal: es lo que
+    // hace. Lo que estaba mal era correrlo antes de mirar si el mensaje
+    // era una pregunta, y el bot ofrecía cargar ese gasto.
+    $borrador = parserEn()->parsear('pasame detalle de agosto 2026');
+
+    noEsNulo($borrador, 'el parser efectivamente lo agarra');
+    esIgual(202_600, $borrador?->monto->centavos, 'lee el año como importe');
+});
+
+prueba('el Dispatcher mira la pregunta antes que el parser', function (): void {
+    // El candado sobre el bug de verdad: los dos caminos existen y
+    // funcionan, lo que falló fue el orden entre ellos. Si alguien lo
+    // vuelve a invertir, toda pregunta con un número adentro se carga
+    // como gasto otra vez.
+    $codigo = file_get_contents(__DIR__ . '/../src/Handler/Dispatcher.php');
+    afirmar($codigo !== false, 'se puede leer el Dispatcher');
+
+    $pregunta = strpos($codigo, 'Pregunta::desde(');
+    $parser = strpos($codigo, '$this->parser->parsear(');
+
+    afirmar($pregunta !== false, 'el Dispatcher consulta Pregunta');
+    afirmar($parser !== false, 'y usa el parser rápido');
+    afirmar($pregunta < $parser, 'la pregunta se mira primero, o un año vuelve a ser un gasto');
+});

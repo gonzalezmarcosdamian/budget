@@ -19,12 +19,28 @@ use DateTimeImmutable;
  */
 final class Pregunta
 {
-    /** Señales de que el mensaje pregunta en vez de anotar un gasto. */
-    private const MARCAS = [
+    /**
+     * Señales fuertes: con una de estas, el mensaje es una pregunta.
+     *
+     * Ninguna aparece en un gasto anotado al pasar.
+     */
+    private const MARCAS_FUERTES = [
         'cuanto', 'cuánto', 'cuanta', 'cuánta', 'que gaste', 'qué gasté',
         'en que gaste', 'en qué gasté', 'gaste en', 'gasté en',
-        'cuales', 'cuáles', 'total de', 'resumen de', 'mostrame', 'decime',
-        'dame', 'detalle', 'como vengo', 'cómo vengo',
+        'cuales', 'cuáles', 'total de', 'resumen de', 'como vengo', 'cómo vengo',
+    ];
+
+    /**
+     * Señales débiles: piden algo, pero no dicen qué.
+     *
+     * "Dame 5000 de nafta" es un gasto y "dame el detalle de agosto" es
+     * una pregunta, así que estas sólo cuentan si además hay un período:
+     * un mes nombrado o una frase como "el mes pasado". Sin eso, el
+     * mensaje sigue su camino normal.
+     */
+    private const MARCAS_DEBILES = [
+        'dame', 'damelo', 'pasame', 'pasa', 'detalle', 'mostrame', 'mostra',
+        'decime', 'ver', 'quiero ver',
     ];
 
     /** Frase => cuántos meses hacia atrás, o null para el período especial. */
@@ -58,13 +74,13 @@ final class Pregunta
     ): ?self {
         $normalizado = CategoryGuesser::normalizar($texto);
 
-        if (!self::pareceUnaPregunta($normalizado, $texto)) {
-            return null;
-        }
-
         // Un mes nombrado gana sobre cualquier período relativo: si
         // alguien dice "agosto 2026" no está preguntando por este mes.
         $mes = Mes::desde($texto, $hoy ?? new DateTimeImmutable());
+
+        if (!self::pareceUnaPregunta($normalizado, $texto, $mes)) {
+            return null;
+        }
 
         return new self(
             $categorizador->adivinar($texto),
@@ -73,14 +89,27 @@ final class Pregunta
         );
     }
 
-    private static function pareceUnaPregunta(string $normalizado, string $original): bool
+    private static function pareceUnaPregunta(string $normalizado, string $original, ?Mes $mes): bool
     {
         if (str_contains($original, '?') || str_contains($original, '¿')) {
             return true;
         }
 
-        foreach (self::MARCAS as $marca) {
-            if (str_contains($normalizado, CategoryGuesser::normalizar($marca))) {
+        if (self::contieneAlguna($normalizado, self::MARCAS_FUERTES)) {
+            return true;
+        }
+
+        // Una marca débil sólo alcanza si además se nombró un período:
+        // es la diferencia entre "dame 5000 de nafta" y "dame agosto".
+        return self::contieneAlguna($normalizado, self::MARCAS_DEBILES)
+            && ($mes !== null || self::contieneAlguna($normalizado, array_keys(self::PERIODOS)));
+    }
+
+    /** @param list<string> $agujas */
+    private static function contieneAlguna(string $normalizado, array $agujas): bool
+    {
+        foreach ($agujas as $aguja) {
+            if (str_contains($normalizado, CategoryGuesser::normalizar($aguja))) {
                 return true;
             }
         }
