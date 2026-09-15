@@ -381,6 +381,64 @@ final class ExpenseRepository
      * pertenecen al total gastado: mezclarlos hace que el número no
      * signifique nada.
      */
+    /**
+     * Lo mismo, pero dejando afuera las transferencias entre personas.
+     *
+     * Existe para el balance de /ingresos. Prestarle plata a alguien y
+     * que te la devuelva no es gastar ni cobrar: si las dos puntas
+     * entran al balance, el mes en que prestás cierra bajo y el mes en
+     * que te devuelven cierra alto, y las dos cifras son falsas. Las
+     * transferencias se muestran neteadas aparte, en /mes.
+     */
+    public function totalPropioEntre(
+        int $userId,
+        DateTimeImmutable $desde,
+        DateTimeImmutable $hasta,
+        string $tipo = Draft::TIPO_GASTO,
+    ): Money {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(monto_ars), 0) AS total
+             FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND fecha BETWEEN ? AND ?
+               AND contraparte IS NULL'
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            $tipo,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+        $fila = $sentencia->fetch();
+
+        return Money::deDecimal((string) ($fila['total'] ?? '0'));
+    }
+
+    /**
+     * El total de cada mes del año, en una sola consulta.
+     *
+     * @return array<int,Money> mes (1-12) => total, sólo los que tienen algo
+     */
+    public function totalPorMes(int $userId, int $anio): array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT MONTH(fecha) AS mes, SUM(monto_ars) AS total
+             FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND YEAR(fecha) = ?
+             GROUP BY MONTH(fecha)
+             ORDER BY mes'
+        );
+        $sentencia->execute([$userId, self::ESTADO_CONFIRMADO, Draft::TIPO_GASTO, $anio]);
+
+        $porMes = [];
+
+        foreach ($sentencia->fetchAll() as $fila) {
+            $porMes[(int) $fila['mes']] = Money::deDecimal((string) $fila['total']);
+        }
+
+        return $porMes;
+    }
+
     public function totalEntre(
         int $userId,
         DateTimeImmutable $desde,

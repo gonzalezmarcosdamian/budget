@@ -133,6 +133,16 @@ final class Client
         ]);
     }
 
+    /**
+     * Publica el menú de comandos que Telegram muestra al tocar "/".
+     *
+     * @return array<string,mixed>
+     */
+    public function fijarComandos(string $comandosJson): array
+    {
+        return $this->llamar('setMyCommands', ['commands' => $comandosJson]);
+    }
+
     /** @return array<string,mixed> */
     public function infoWebhook(): array
     {

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Budget\Handler;
 
+use Budget\Expense\Draft;
 use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
+use Budget\Repository\RecurringRepository;
 use Budget\Support\Money;
 use DateTimeImmutable;
 
@@ -24,7 +26,8 @@ final class Reports
 
     public function __construct(
         private readonly ExpenseRepository $gastos,
-        private readonly ?CategoryRepository $categorias = null,
+        private readonly CategoryRepository $categorias,
+        private readonly RecurringRepository $recurrentes,
     ) {
     }
 
@@ -38,7 +41,7 @@ final class Reports
     {
         [$desde, $hasta, $etiqueta] = $p->rango($hoy);
 
-        if ($p->categoria !== null && $this->categorias !== null) {
+        if ($p->categoria !== null) {
             $categoryId = $this->categorias->idPorNombre($userId, $p->categoria);
 
             if ($categoryId !== null) {
@@ -289,6 +292,111 @@ final class Reports
         }
 
         return $mostradas === 0 ? [] : $lineas;
+    }
+
+    /** Los gastos que se repiten, con el día en que toca cada uno. */
+    public function recurrentes(int $userId): string
+    {
+        $activos = $this->recurrentes->activos($userId);
+
+        if ($activos === []) {
+            return 'No tenés gastos recurrentes cargados todavía.';
+        }
+
+        $lineas = ['🔁 <b>Gastos que se repiten</b>', ''];
+
+        foreach ($activos as $r) {
+            $lineas[] = sprintf(
+                '%s %s — <b>%s</b>  <i>día %d</i>',
+                (string) ($r['emoji'] ?? '🔔'),
+                ExpenseCard::escapar((string) $r['comercio']),
+                ExpenseCard::escapar(Money::deDecimal((string) $r['monto_esperado'])->formatear()),
+                (int) $r['dia_del_mes']
+            );
+
+            if (trim((string) ($r['nota'] ?? '')) !== '') {
+                $lineas[] = '   <i>' . ExpenseCard::escapar((string) $r['nota']) . '</i>';
+            }
+        }
+
+        $lineas[] = '';
+        $lineas[] = '<i>Te aviso el día que toca y lo cargás con un toque.</i>';
+
+        return implode("
+", $lineas);
+    }
+
+    /** Lo que entró: sueldos, devoluciones, cobros. */
+    public function ingresos(int $userId, DateTimeImmutable $enElMes): string
+    {
+        $desde = $enElMes->modify('first day of this month');
+        $hasta = $enElMes->modify('last day of this month');
+
+        // Sin las transferencias entre personas: prestar y que te
+        // devuelvan no es gastar ni cobrar, y meter las dos puntas hace
+        // que el mes en que prestás cierre bajo y el siguiente alto.
+        $ingresos = $this->gastos->totalPropioEntre($userId, $desde, $hasta, Draft::TIPO_INGRESO);
+        $gastos = $this->gastos->totalPropioEntre($userId, $desde, $hasta);
+        $invertido = $this->gastos->totalPropioEntre($userId, $desde, $hasta, Draft::TIPO_INVERSION);
+
+        if ($ingresos->centavos === 0) {
+            return '💰 No hay ingresos cargados este mes.';
+        }
+
+        $lineas = [
+            '💰 <b>Ingresos de ' . ExpenseCard::escapar(self::nombreDelMes($enElMes, false)) . '</b>',
+            '',
+            'Entró: <b>' . ExpenseCard::escapar($ingresos->formatear()) . '</b>',
+            'Salió: <b>' . ExpenseCard::escapar($gastos->formatear()) . '</b>',
+        ];
+
+        // El número que importa: si el saldo es negativo, este mes
+        // gastaste más de lo que entró.
+        $saldo = $ingresos->centavos - $gastos->centavos;
+        $lineas[] = '';
+        $lineas[] = sprintf(
+            '%s Saldo: <b>%s</b>',
+            $saldo >= 0 ? '✅' : '⚠️',
+            ExpenseCard::escapar(Money::deCentavos(abs($saldo))->formatear())
+        ) . ($saldo < 0 ? ' <i>en rojo</i>' : '');
+
+        // La inversión sale de la cuenta pero no se pierde, así que no
+        // resta del saldo: se muestra para saber cuánto del excedente
+        // ya está colocado.
+        if ($invertido->centavos > 0) {
+            $lineas[] = '📈 De eso invertiste <b>' . ExpenseCard::escapar($invertido->formatear()) . '</b>';
+        }
+
+        return implode("
+", $lineas);
+    }
+
+    /** Resumen del año, mes a mes. */
+    public function delAnio(int $userId, DateTimeImmutable $hoy): string
+    {
+        $porMes = $this->gastos->totalPorMes($userId, (int) $hoy->format('Y'));
+
+        if ($porMes === []) {
+            return '📆 Todavía no hay gastos cargados este año.';
+        }
+
+        $lineas = ['📆 <b>' . $hoy->format('Y') . '</b>', ''];
+        $total = Money::deCentavos(0);
+
+        foreach ($porMes as $mes => $delMes) {
+            $total = $total->mas($delMes);
+            $lineas[] = sprintf(
+                '%s — <b>%s</b>',
+                ExpenseCard::escapar(self::nombreDelMes($hoy->setDate((int) $hoy->format('Y'), $mes, 1), false)),
+                ExpenseCard::escapar($delMes->formatear())
+            );
+        }
+
+        $lineas[] = '';
+        $lineas[] = 'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>';
+
+        return implode("
+", $lineas);
     }
 
     public function ultimos(int $userId): string

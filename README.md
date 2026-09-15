@@ -22,22 +22,27 @@ gratuitas de varios proveedores de IA.
 | Texto natural | `gasté 45 lucas en la prepaga` · `ayer 3 palos el auto` |
 | Foto | comprobante o captura de la app del banco |
 | Nota de voz | audio de Telegram, sin transcodificar |
+| Resumen de tarjeta | el PDF, y carga el mes entero |
+| Preguntas | `cuánto gasté en súper este mes` · `en qué se me va la plata` |
 
 Entiende la jerga: `luca` = mil, `palo` = millón, `25k` = 25.000. Y el formato
 argentino de importes: `18.450,75`.
 
-Comandos: `/hoy`, `/mes`, `/ultimos`, `/ayuda`.
+Comandos: `/hoy`, `/mes`, `/anio`, `/ingresos`, `/ultimos`, `/recurrentes`,
+`/ayuda`. La lista canónica vive en `Budget\Telegram\Menu` y se publica con
+`php bin/comandos.php`.
 
 ## Estado
 
-Fase 1 y 2 implementadas: alta por invitación, carga por texto con parser de
-costo cero, extracción multimodal por IA con cadena de respaldo, tarjeta de
-confirmación con botones, categorías que se aprenden de tus correcciones y
-reportes diarios y mensuales.
+En producción. Alta por invitación, carga por texto con parser de costo cero,
+extracción multimodal por IA con cadena de respaldo, tarjeta de confirmación con
+botones, categorías que se aprenden de tus correcciones, importación de resúmenes
+de tarjeta en PDF, sincronización con Mercado Pago, taxonomía completa
+(gasto/ingreso/inversión × fijo/variable), transferencias neteadas por persona,
+recordatorios de gastos recurrentes y respuestas a preguntas en lenguaje natural.
 
-Pendiente: presupuestos con alerta, recurrentes, reporte mensual automático,
-ingesta de mails del banco, Mercado Pago, Google Sheets. Ver
-[docs/DECISIONES.md](docs/DECISIONES.md) y el plan técnico.
+Pendiente: presupuestos con alerta, sincronización automática de IOL, ingesta de
+mails del banco. Ver [docs/DECISIONES.md](docs/DECISIONES.md) y el plan técnico.
 
 ## Arranque rápido
 

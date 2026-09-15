@@ -503,3 +503,52 @@ inserción.
 **Consecuencias.** Sincronizar dos veces seguidas importa cero la segunda,
 verificado. Y como MySQL admite varios NULL en un índice único, los gastos
 cargados a mano —que no tienen origen externo— no se estorban entre sí.
+
+---
+
+## 24. El menú de comandos se versiona, no se registra a mano
+
+**Contexto.** El menú que Telegram muestra al tocar "/" se publicó una sola vez,
+a mano, con los cuatro comandos que existían ese día. El bot siguió aprendiendo
+—preguntas en lenguaje natural, resúmenes en PDF, recordatorios, transferencias
+neteadas— y nada de eso apareció nunca en ningún lado. El usuario lo dijo así:
+"no veo nuevos métodos". Tenía razón: **una función que nadie descubre no
+existe**.
+
+**Decisión.** La lista canónica vive en `Budget\Telegram\Menu::COMANDOS`. De ahí
+salen las dos cosas que el usuario ve: el payload de `setMyCommands`
+(`bin/comandos.php`) y el bloque de comandos de `/ayuda`. Dos tests cierran el
+círculo en las dos direcciones: todo comando que el `Dispatcher` atiende tiene
+que estar en el menú, y todo comando del menú tiene que estar atendido.
+
+**Consecuencias.** Agregar un comando y olvidarse de publicarlo ahora rompe la
+suite. El costo es correr `php bin/comandos.php` después de agregar uno, que es
+justamente el paso que se había olvidado. Los alias que Telegram no acepta
+—`/año`, porque sólo admite `[a-z0-9_]`— siguen funcionando escritos a mano pero
+quedan fuera del menú, declarados como excepción en el test.
+
+---
+
+## 25. `php -l` no ve una clase que no existe
+
+**Contexto.** Al mover el listado de recurrentes del `Dispatcher` a `Reports` se
+borró de más el `use Budget\Repository\RecurringRepository`, pero quedó vivo un
+`new RecurringRepository(...)` en el manejo del callback. Sin el `use`, el nombre
+resuelve al namespace propio: `Budget\Handler\RecurringRepository`, que no
+existe. El lint pasa —es sintaxis válida— y la suite entera quedó en verde,
+porque ningún test recorría ese botón. El error habría aparecido recién en
+producción, cuando el usuario tocara "Cargar" en un recordatorio: y como el
+webhook ya contestó 200, Telegram tampoco reintenta. El botón no haría nada, en
+silencio.
+
+**Decisión.** `tests/ClasesResuelvenTest.php` tokeniza todo `src/`, imita la
+resolución de nombres de PHP —los `use` del archivo, incluidos los `as`, y si no
+el namespace propio— y verifica que cada clase instanciada exista. Son 40
+instanciaciones en 43 archivos, en milisegundos y sin base.
+
+**Consecuencias.** Se verificó que falla con el bug original y con el mensaje
+correcto antes de darlo por bueno. Cubre `new`, que es donde duele; las llamadas
+estáticas y los type hints quedan fuera por ahora, porque el autoloader los
+resuelve en el mismo momento y el costo de tokenizarlos no se justificaba
+todavía. La lección general: un lenguaje con resolución de nombres en runtime
+necesita un chequeo en tests, no alcanza con el linter.

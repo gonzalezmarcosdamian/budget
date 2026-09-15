@@ -46,6 +46,7 @@ el gasto en silencio.
 php tests/run.php --unit          # unitarios, sin base (milisegundos)
 php bin/cron.php                  # purga + chequeo de salud del webhook
 php bin/doctor.php                # diagnóstico del entorno, con remedios
+php bin/comandos.php              # publica el menú de comandos en Telegram
 docker compose up -d --build      # entorno de pre-producción
 docker compose exec app php bin/migrate.php
 docker compose exec app php tests/run.php   # unitarios + integración

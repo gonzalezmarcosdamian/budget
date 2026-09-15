@@ -48,6 +48,16 @@ function esIgual(mixed $esperado, mixed $real, string $contexto = ''): void
     );
 }
 
+function contiene(string $texto, string $fragmento, string $contexto = ''): void
+{
+    $sufijo = $contexto === '' ? '' : " ({$contexto})";
+
+    afirmar(
+        str_contains($texto, $fragmento),
+        sprintf('esperaba encontrar %s en:%s%s%s', representar($fragmento), PHP_EOL, $texto, $sufijo)
+    );
+}
+
 function esNulo(mixed $real, string $contexto = ''): void
 {
     $sufijo = $contexto === '' ? '' : " ({$contexto})";

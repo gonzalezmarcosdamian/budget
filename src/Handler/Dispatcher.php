@@ -11,14 +11,15 @@ use Budget\Expense\CategoryGuesser;
 use Budget\Expense\FastParser;
 use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
-use Budget\Repository\RecurringRepository;
 use Budget\Repository\ExpenseRepository;
+use Budget\Repository\RecurringRepository;
 use Budget\Repository\UserRepository;
 use Budget\Support\Clock;
 use Budget\Support\Config;
 use Budget\Support\Logger;
 use Budget\Support\Money;
 use Budget\Telegram\Client;
+use Budget\Telegram\Menu;
 use Budget\Telegram\Update;
 
 /**
@@ -35,6 +36,7 @@ final class Dispatcher
         private readonly UserRepository $usuarios,
         private readonly ExpenseRepository $gastos,
         private readonly CategoryRepository $categorias,
+        private readonly RecurringRepository $recurrentes,
         private readonly FastParser $parser,
         private readonly Router $ia,
         private readonly Reports $reportes,
@@ -120,6 +122,9 @@ final class Dispatcher
             '/hoy' => $this->reportes->delDia($userId, $hoy),
             '/mes' => $this->reportes->delMes($userId, $hoy),
             '/ultimos' => $this->reportes->ultimos($userId),
+            '/ingresos' => $this->reportes->ingresos($userId, $hoy),
+            '/anio', '/año' => $this->reportes->delAnio($userId, $hoy),
+            '/recurrentes' => $this->reportes->recurrentes($userId),
             default => 'No conozco ese comando. Probá /ayuda.',
         };
 
@@ -483,8 +488,7 @@ final class Dispatcher
     private function manejarRecurrente(int $userId, Update $update): void
     {
         $accion = ExpenseCard::decodificar($update->callbackData);
-        $recurrentes = new RecurringRepository($this->gastos->pdo());
-        $r = $accion === null ? null : $recurrentes->porId($userId, $accion['expenseId']);
+        $r = $accion === null ? null : $this->recurrentes->porId($userId, $accion['expenseId']);
 
         if ($accion === null || $r === null) {
             $this->telegram->responderCallback($update->callbackQueryId);
@@ -493,7 +497,7 @@ final class Dispatcher
         }
 
         $ahora = $this->reloj->ahora();
-        $recurrentes->posponerAlMesQueViene($userId, (int) $r['id'], $ahora);
+        $this->recurrentes->posponerAlMesQueViene($userId, (int) $r['id'], $ahora);
 
         if ($accion['accion'] === Recordatorios::ACCION_SALTEAR) {
             $this->telegram->responderCallback($update->callbackQueryId, 'Salteado');
@@ -762,19 +766,23 @@ final class Dispatcher
     private function ayuda(): string
     {
         return implode("\n", [
-            '<b>Cómo cargar un gasto</b>',
+            '<b>Cargar un gasto</b>',
             '',
-            '• Texto: <code>1200 super</code>, <code>nafta 25k</code>, <code>ayer 45 lucas de prepaga</code>',
+            '• <code>1200 super</code> · <code>nafta 25k</code> · <code>ayer 45 lucas de prepaga</code>',
+            '• Varios de una: <code>30 mil de nafta y 5 mil el café</code>',
             '• Foto del ticket o captura de la app',
             '• Nota de voz',
-            '• El PDF del resumen de la tarjeta: te cargo el mes entero de una',
+            '• El PDF del resumen de la tarjeta: cargo el mes entero',
+            '',
+            '<b>Preguntarme</b>',
+            '',
+            '• <code>cuánto gasté en súper este mes</code>',
+            '• <code>cuánto gasté el mes pasado</code>',
+            '• <code>en qué se me va la plata</code>',
             '',
             '<b>Comandos</b>',
             '',
-            '/hoy — total del día',
-            '/mes — total del mes por categoría',
-            '/ultimos — los últimos 10 gastos',
-            '/ayuda — esto',
+            ...Menu::lineasDeAyuda(),
         ]);
     }
 }
