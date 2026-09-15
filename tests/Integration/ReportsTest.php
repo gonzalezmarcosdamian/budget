@@ -543,3 +543,55 @@ prueba('[db] marcar reintegro no convierte un cobro en descuento de otro', funct
         'resta los 60.000 de Cami, no los 120.000 del canon'
     );
 });
+
+prueba('[db] las transferencias se parten en las que salieron y las que entraron', function (): void {
+    // Un solo listado mezclado obliga a leer la flecha de cada renglón
+    // para saber de qué lado quedaste.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    // Con Goma quedó debiendo ella: mandó más de lo que le devolvieron.
+    $mande = gastoConfirmado($ana, 900_000, 'Goma', '2026-09-05');
+    $volvio = gastoConfirmado($ana, 300_000, 'Goma', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '111' WHERE id IN ({$mande}, {$volvio})");
+
+    // Con Brian al revés: le devolvieron más de lo que mandó.
+    $poco = gastoConfirmado($ana, 100_000, 'Brian', '2026-09-07');
+    $mucho = gastoConfirmado($ana, 450_000, 'Brian', '2026-09-08', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '222' WHERE id IN ({$poco}, {$mucho})");
+
+    // Compensado del todo: no aporta información, no ocupa lugar.
+    $ida = gastoConfirmado($ana, 50_000, 'Nadie', '2026-09-09');
+    $vuelta = gastoConfirmado($ana, 50_000, 'Nadie', '2026-09-10', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '333' WHERE id IN ({$ida}, {$vuelta})");
+
+    $texto = $reportes->delMes($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, 'Mandaste de más', 'el grupo de las que salieron');
+    contiene($texto, 'Te mandaron de más', 'y el de las que entraron');
+    contiene($texto, 'Goma — <b>$600.000</b>', 'el neto, no el bruto');
+    contiene($texto, 'Brian — <b>$350.000</b>', 'del otro lado, también en positivo');
+    afirmar(!str_contains($texto, 'Nadie'), 'el que compensó todo no ocupa lugar');
+
+    afirmar(
+        strpos($texto, 'Mandaste de más') < strpos($texto, 'Te mandaron de más'),
+        'primero lo que saliste'
+    );
+});
+
+prueba('[db] sin transferencias en un sentido, ese grupo no aparece', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    $id = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-05');
+    $pdo->exec("UPDATE expenses SET contraparte = '555' WHERE id = {$id}");
+
+    $texto = $reportes->delMes($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, 'Mandaste de más');
+    afirmar(!str_contains($texto, 'Te mandaron de más'), 'un título vacío es ruido');
+});

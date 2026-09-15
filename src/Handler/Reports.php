@@ -273,44 +273,70 @@ final class Reports
      *
      * @return list<string>
      */
+    /**
+     * Las transferencias entre personas, neteadas y en dos grupos.
+     *
+     * Un solo listado mezclado obliga a leer la flecha de cada renglón
+     * para saber de qué lado quedaste. Separadas, la pregunta "¿con
+     * quién quedé en deuda y quién quedó conmigo?" se contesta de un
+     * vistazo, que es lo único que se le pide a este bloque.
+     *
+     * @return list<string>
+     */
     private function transferencias(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
     {
         $netos = $this->gastos->netoPorContraparte($userId, $desde, $hasta);
 
-        if ($netos === []) {
+        $salieron = array_values(array_filter($netos, static fn (array $n): bool => $n['neto'] > 0));
+        $entraron = array_values(array_filter($netos, static fn (array $n): bool => $n['neto'] < 0));
+
+        // El más grande primero de cada lado: los de entrada vienen
+        // ordenados al revés porque su neto es negativo.
+        usort($entraron, static fn (array $a, array $b): int => $a['neto'] <=> $b['neto']);
+
+        $bloques = [
+            ['↗', 'Mandaste de más', $salieron],
+            ['↘', 'Te mandaron de más', $entraron],
+        ];
+
+        $lineas = [];
+
+        foreach ($bloques as [$flecha, $titulo, $grupo]) {
+            foreach (self::grupoDeTransferencias($flecha, $titulo, $grupo) as $linea) {
+                $lineas[] = $linea;
+            }
+        }
+
+        // Un neto en cero es alguien con quien se compensó todo: no hubo
+        // gasto, y listarlo sólo ocupa lugar.
+        return $lineas === [] ? [] : array_merge(['', '🔁 <b>Transferencias (neto)</b>'], $lineas);
+    }
+
+    /**
+     * @param list<array<string,mixed>> $grupo
+     * @return list<string>
+     */
+    private static function grupoDeTransferencias(string $flecha, string $titulo, array $grupo): array
+    {
+        if ($grupo === []) {
             return [];
         }
 
-        $lineas = ['', '🔁 <b>Transferencias (neto)</b>'];
-        $mostradas = 0;
+        $lineas = ['', $flecha . ' <b>' . $titulo . '</b>'];
 
-        foreach ($netos as $n) {
-            if ($mostradas >= self::CONTRAPARTES_EN_EL_REPORTE) {
-                break;
-            }
-
-            // Un neto en cero es alguien con quien se compensó todo: no
-            // hubo gasto, y listarlo sólo ocupa lugar.
-            if ($n['neto'] === 0) {
-                continue;
-            }
-
-            $neto = Money::deCentavos(abs($n['neto']));
+        foreach (array_slice($grupo, 0, self::CONTRAPARTES_EN_EL_REPORTE) as $n) {
             $nombre = $n['nombre'] !== '' ? $n['nombre'] : $n['contraparte'];
 
             $lineas[] = sprintf(
-                '%s %s — <b>%s</b>  <i>(mandaste %s, te devolvieron %s)</i>',
-                $n['neto'] > 0 ? '↗' : '↘',
+                '   %s — <b>%s</b>  <i>(mandaste %s, te devolvieron %s)</i>',
                 ExpenseCard::escapar(mb_substr($nombre, 0, 26)),
-                ExpenseCard::escapar($neto->formatear()),
+                ExpenseCard::escapar(Money::deCentavos(abs($n['neto']))->formatear()),
                 ExpenseCard::escapar($n['enviado']->formatear()),
                 ExpenseCard::escapar($n['recibido']->formatear())
             );
-
-            $mostradas++;
         }
 
-        return $mostradas === 0 ? [] : $lineas;
+        return $lineas;
     }
 
     /**
