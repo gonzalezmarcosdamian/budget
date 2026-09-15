@@ -47,6 +47,7 @@ php tests/run.php --unit          # unitarios, sin base (milisegundos)
 php bin/cron.php                  # purga + chequeo de salud del webhook
 php bin/doctor.php                # diagnóstico del entorno, con remedios
 php bin/comandos.php              # publica el menú de comandos en Telegram
+php bin/humo.php                  # renderiza todo lo que el bot contesta, con datos reales
 docker compose up -d --build      # entorno de pre-producción
 docker compose exec app php bin/migrate.php
 docker compose exec app php tests/run.php   # unitarios + integración
@@ -64,6 +65,8 @@ Puertos ocupados: `DB_HOST_PORT=3320 APP_HOST_PORT=8090 docker compose up -d`.
 - [ ] Sin `var_dump`, `print_r`, `error_log` de depuración
 - [ ] Si tocaste SQL: migración nueva, nunca editar una ya aplicada
 - [ ] Si tocaste extracción: fixtures actualizadas
+- [ ] **Si tocaste algo que el usuario ve: `php bin/humo.php` contra producción,
+      después de desplegar y antes de decir que está andando**
 
 ## Agentes de este proyecto
 
@@ -93,3 +96,9 @@ Están en `.claude/agents/`. Ver `docs/WORKFLOW.md` para cuándo usar cada uno.
 - **Contra producción, una sola pasada.** El firewall de WNPower bloquea la IP
   ante ráfagas y sólo lo destraba una persona con un captcha. Nada de `curl` en
   ráfaga ni reintentos automáticos.
+- **Verde no es visible.** La suite puede estar en verde, el despliegue en verde
+  y el menú publicado, y el usuario igual no ver lo que se construyó: pasó con
+  `/inversiones`, que mostraba un total y ninguna posición. Los tests prueban las
+  piezas contra datos de laboratorio; `bin/humo.php` ejecuta el camino entero
+  contra los datos reales. **Decir "está andando" sin haberlo corrido es una
+  afirmación sin respaldo.**
