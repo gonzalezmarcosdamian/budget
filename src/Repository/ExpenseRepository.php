@@ -160,7 +160,10 @@ final class ExpenseRepository
                     COALESCE(SUM(CASE WHEN e.tipo = 'gasto' THEN e.monto_ars ELSE 0 END), 0) AS enviado,
                     COALESCE(SUM(CASE WHEN e.tipo = 'ingreso' THEN e.monto_ars ELSE 0 END), 0) AS recibido
              FROM expenses e
+             LEFT JOIN contrapartes cp
+                    ON cp.externo = e.contraparte AND cp.user_id = e.user_id
              WHERE e.user_id = ? AND e.estado = ? AND e.contraparte IS NOT NULL
+               AND COALESCE(cp.es_propia, 0) = 0
                AND e.fecha BETWEEN ? AND ?
              GROUP BY e.contraparte
              ORDER BY SUM(CASE WHEN e.tipo = 'gasto' THEN e.monto_ars ELSE -e.monto_ars END) DESC"
@@ -492,10 +495,17 @@ final class ExpenseRepository
      * Por eso el neto se calcula por contraparte y con piso en cero. Ver
      * gastoRealEntre().
      *
+     * Los cuatro destinos de la salida particionan el total sin
+     * solaparse: fijos + consumo + prestado + invertido + aPropio suma
+     * exactamente lo que salió, y por eso los porcentajes cierran. Mover
+     * plata a una cuenta propia va en su propio balde y no en consumo,
+     * que era lo que hacía decir "gastaste $200.000" y "consumiste
+     * $5.200.000" en el mismo mensaje.
+     *
      * @return array{entroTerceros:Money, entroPropio:Money,
      *               salioTerceros:Money, salioPropio:Money,
      *               gastoReal:int, consumo:Money, fijos:Money,
-     *               prestado:Money, invertido:Money}
+     *               prestado:Money, invertido:Money, aPropio:Money}
      */
     public function flujoDeCaja(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
     {
@@ -512,11 +522,16 @@ final class ExpenseRepository
                                    AND (COALESCE(cp.es_propia,0) = 1 OR e.tipo = :inversion2)
                                   THEN e.monto_ars END), 0) AS salio_propio,
                 COALESCE(SUM(CASE WHEN e.tipo = :inversion3 THEN e.monto_ars END), 0) AS invertido,
-                COALESCE(SUM(CASE WHEN e.tipo = :gasto AND c.nombre = :prestamos
+                COALESCE(SUM(CASE WHEN e.tipo <> :ingreso5 AND COALESCE(cp.es_propia,0) = 1
+                                  THEN e.monto_ars END), 0) AS aPropio,
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto AND COALESCE(cp.es_propia,0) = 0
+                                   AND c.nombre = :prestamos
                                   THEN e.monto_ars END), 0) AS prestado,
-                COALESCE(SUM(CASE WHEN e.tipo = :gasto2 AND COALESCE(c.nombre,'') <> :prestamos2
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto2 AND COALESCE(cp.es_propia,0) = 0
+                                   AND COALESCE(c.nombre,'') <> :prestamos2
                                    AND e.naturaleza = :fijo THEN e.monto_ars END), 0) AS fijos,
-                COALESCE(SUM(CASE WHEN e.tipo = :gasto3 AND COALESCE(c.nombre,'') <> :prestamos3
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto3 AND COALESCE(cp.es_propia,0) = 0
+                                   AND COALESCE(c.nombre,'') <> :prestamos3
                                    AND e.naturaleza <> :fijo2 THEN e.monto_ars END), 0) AS consumo
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id
@@ -531,6 +546,7 @@ final class ExpenseRepository
             'ingreso2' => Draft::TIPO_INGRESO,
             'ingreso3' => Draft::TIPO_INGRESO,
             'ingreso4' => Draft::TIPO_INGRESO,
+            'ingreso5' => Draft::TIPO_INGRESO,
             'inversion' => Draft::TIPO_INVERSION,
             'inversion2' => Draft::TIPO_INVERSION,
             'inversion3' => Draft::TIPO_INVERSION,
@@ -563,6 +579,7 @@ final class ExpenseRepository
             'fijos' => $plata('fijos'),
             'prestado' => $plata('prestado'),
             'invertido' => $plata('invertido'),
+            'aPropio' => $plata('aPropio'),
         ];
     }
 
@@ -651,11 +668,21 @@ final class ExpenseRepository
         $sentencia = $this->pdo->prepare(
             'SELECT MONTH(fecha) AS mes, SUM(monto_ars) AS total
              FROM expenses
-             WHERE user_id = ? AND estado = ? AND tipo = ? AND YEAR(fecha) = ?
+             WHERE user_id = ? AND estado = ? AND tipo = ?
+               AND fecha BETWEEN ? AND ?
              GROUP BY MONTH(fecha)
              ORDER BY mes'
         );
-        $sentencia->execute([$userId, self::ESTADO_CONFIRMADO, Draft::TIPO_GASTO, $anio]);
+        // Un rango de fechas y no YEAR(fecha): con la función alrededor
+        // de la columna el índice se usa a medias y la consulta recorre
+        // el historial completo del usuario, pida el año que pida.
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            sprintf('%04d-01-01', $anio),
+            sprintf('%04d-12-31', $anio),
+        ]);
 
         $porMes = [];
 
@@ -726,7 +753,7 @@ final class ExpenseRepository
     public function ultimos(int $userId, int $limite = self::LIMITE_LISTADO): array
     {
         $sentencia = $this->pdo->prepare(
-            'SELECT e.id, e.monto, e.moneda, e.fecha, e.comercio,
+            'SELECT e.id, e.monto, e.moneda, e.fecha, e.comercio, e.tipo,
                     COALESCE(c.emoji, ?) AS emoji
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id

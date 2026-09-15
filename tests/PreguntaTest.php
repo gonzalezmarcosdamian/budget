@@ -167,3 +167,32 @@ prueba('una marca fuerte no necesita periodo', function (): void {
     noEsNulo(Pregunta::desde('cuanto gaste en delivery', new CategoryGuesser(), $hoy));
     noEsNulo(Pregunta::desde('en que se me va la plata?', new CategoryGuesser(), $hoy));
 });
+
+prueba('una palabra que contiene una marca no convierte un gasto en pregunta', function (): void {
+    // Con búsqueda por subcadena, "4500 verduleria agosto" era una
+    // pregunta porque "ver" está dentro de "verduleria", y el gasto se
+    // perdía en silencio. Duele más desde que la pregunta corre antes
+    // que el parser: un falso positivo ya no tiene segunda oportunidad.
+    $hoy = new DateTimeImmutable('2026-09-15');
+
+    foreach ([
+        '4500 verduleria agosto',
+        '2000 de verduras este mes',
+        'pasaje a mendoza 12000 en agosto',
+        '3000 cerveza el mes pasado',
+    ] as $frase) {
+        esNulo(Pregunta::desde($frase, new CategoryGuesser(), $hoy), $frase);
+    }
+});
+
+prueba('la marca sigue valiendo cuando es una palabra de verdad', function (): void {
+    $hoy = new DateTimeImmutable('2026-09-15');
+
+    foreach ([
+        'pasame agosto',
+        'quiero ver agosto',
+        'dame el detalle de agosto',
+    ] as $frase) {
+        noEsNulo(Pregunta::desde($frase, new CategoryGuesser(), $hoy), $frase);
+    }
+});

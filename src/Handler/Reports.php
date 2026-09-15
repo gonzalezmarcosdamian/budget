@@ -501,6 +501,7 @@ final class Reports
             ['🛒', 'Consumo', $f['consumo']],
             ['🤝', 'Prestado', $f['prestado']],
             ['📈', 'Invertido', $f['invertido']],
+            ['🔁', 'A cuenta tuya', $f['aPropio']],
         ];
 
         $lineas = [];

@@ -132,3 +132,24 @@ prueba('las posiciones se ordenan por cuanto movieron la aguja en plata', functi
     esIgual('GRANDE', $c['posiciones'][0]['simbolo'], 'primero la que más plata movió');
     esIgual('CHICA', $c['posiciones'][1]['simbolo']);
 });
+
+prueba('vender una posicion no reporta rendimiento cero', function (): void {
+    // Con dos fotos no hay forma de saber a qué precio se vendió. Decir
+    // 0,00% es afirmar algo que el dato no sostiene.
+    $c = Patrimonio::comparar(
+        posiciones(['GLD' => [10, 12560]]),
+        posiciones(['GLD' => [10, 12560], 'SPY' => [100, 20000]])
+    );
+
+    $spy = null;
+
+    foreach ($c['posiciones'] as $p) {
+        if ($p['simbolo'] === 'SPY') {
+            $spy = $p;
+        }
+    }
+
+    noEsNulo($spy);
+    afirmar($spy['cerrada'] === true, 'se marca como cerrada');
+    esNulo($spy['variacion'], 'sin precio de venta no hay porcentaje que afirmar');
+});

@@ -797,7 +797,14 @@ final class Dispatcher
             $texto,
             ExpenseCard::tecladoDeCategorias(
                 (int) $siguiente['id'],
-                $this->categorias->disponibles($userId)
+                // Sin sacar "Otros" el comando entra en bucle: es la
+                // categoría que define la cola, así que elegirla deja
+                // al movimiento donde estaba y vuelve a salir sorteado.
+                array_values(array_filter(
+                    $this->categorias->disponibles($userId),
+                    static fn (array $c): bool
+                        => $c['nombre'] !== ExpenseRepository::CATEGORIA_OTROS
+                ))
             )
         );
 

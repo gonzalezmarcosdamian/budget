@@ -39,8 +39,8 @@ final class Pregunta
      * mensaje sigue su camino normal.
      */
     private const MARCAS_DEBILES = [
-        'dame', 'damelo', 'pasame', 'pasa', 'detalle', 'mostrame', 'mostra',
-        'decime', 'ver', 'quiero ver',
+        'dame', 'damelo', 'pasame', 'detalle', 'mostrame', 'decime',
+        'quiero ver', 'ver',
     ];
 
     /** Frase => cuántos meses hacia atrás, o null para el período especial. */
@@ -105,11 +105,27 @@ final class Pregunta
             && ($mes !== null || self::contieneAlguna($normalizado, array_keys(self::PERIODOS)));
     }
 
-    /** @param list<string> $agujas */
+    /**
+     * Busca por palabra entera, nunca por subcadena.
+     *
+     * Con `str_contains` a secas, "4500 verduleria agosto" era una
+     * pregunta porque "ver" está adentro de "verduleria", y el gasto se
+     * perdía en silencio: el bot contestaba un reporte. Duele más desde
+     * que la pregunta se evalúa antes que el parser, porque un falso
+     * positivo ya no tiene segunda oportunidad.
+     *
+     * `CategoryGuesser` resolvió esto mismo antes, para que "super" no
+     * dispare con "supervielle".
+     *
+     * @param list<string> $agujas
+     */
     private static function contieneAlguna(string $normalizado, array $agujas): bool
     {
+        $palabras = preg_split('/[^a-z0-9]+/u', $normalizado, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $conBordes = ' ' . implode(' ', $palabras) . ' ';
+
         foreach ($agujas as $aguja) {
-            if (str_contains($normalizado, CategoryGuesser::normalizar($aguja))) {
+            if (str_contains($conBordes, ' ' . CategoryGuesser::normalizar($aguja) . ' ')) {
                 return true;
             }
         }

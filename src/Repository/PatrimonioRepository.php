@@ -50,10 +50,14 @@ final class PatrimonioRepository
         array $posiciones,
         string $fuente = 'iol',
     ): int {
-        $total = 0.0;
+        // En centavos enteros y no en float: cada posición se guarda
+        // redondeada a dos decimales, así que sumar los valores crudos
+        // y redondear al final da un total que no coincide con la suma
+        // de las filas. Σ round(v) ≠ round(Σ v).
+        $total = 0;
 
         foreach ($posiciones as $p) {
-            $total += $p['valor'];
+            $total += (int) round($p['valor'] * 100);
         }
 
         $this->pdo->beginTransaction();
@@ -67,7 +71,12 @@ final class PatrimonioRepository
                 'INSERT INTO patrimonio_snapshot (user_id, fecha, total_ars, fuente)
                  VALUES (?, ?, ?, ?)'
             );
-            $alta->execute([$userId, $fecha->format('Y-m-d'), number_format($total, 2, '.', ''), $fuente]);
+            $alta->execute([
+                $userId,
+                $fecha->format('Y-m-d'),
+                Money::deCentavos($total)->aDecimal(),
+                $fuente,
+            ]);
             $snapshotId = (int) $this->pdo->lastInsertId();
 
             $posicion = $this->pdo->prepare(

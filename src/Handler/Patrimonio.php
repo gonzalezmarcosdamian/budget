@@ -65,7 +65,11 @@ final class Patrimonio
                 'valor' => $a['valor'] ?? Money::deCentavos(0),
                 'porPrecio' => self::aCentavos($precio),
                 'porAporte' => self::aCentavos($aporte),
-                'variacion' => self::porcentaje($precio, $cantidadAntes * $precioAntes),
+                // Cerrada: no se sabe a qué precio se vendió, y decir
+                // 0,00% sería afirmar algo que el dato no sostiene.
+                'variacion' => $a === null
+                    ? null
+                    : self::porcentaje($precio, $cantidadAntes * $precioAntes),
                 'cerrada' => $a === null,
                 'nueva' => $b === null,
             ];

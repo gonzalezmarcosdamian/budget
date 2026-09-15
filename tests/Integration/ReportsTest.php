@@ -571,8 +571,8 @@ prueba('[db] las transferencias se parten en las que salieron y las que entraron
 
     contiene($texto, 'Mandaste de más', 'el grupo de las que salieron');
     contiene($texto, 'Te mandaron de más', 'y el de las que entraron');
-    contiene($texto, 'Hermano — <b>$600.000</b>', 'el neto, no el bruto');
-    contiene($texto, 'Conocido — <b>$350.000</b>', 'del otro lado, también en positivo');
+    contiene($texto, 'Hermano — <b>−$600.000</b>', 'el neto con signo, no el bruto');
+    contiene($texto, 'Conocido — <b>+$350.000</b>', 'del otro lado, en positivo');
     afirmar(!str_contains($texto, 'Nadie'), 'el que compensó todo no ocupa lugar');
 
     afirmar(
