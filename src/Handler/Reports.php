@@ -313,6 +313,46 @@ final class Reports
         return $mostradas === 0 ? [] : $lineas;
     }
 
+    /**
+     * El próximo movimiento que falta clasificar, y cuántos quedan.
+     *
+     * Los movimientos de Mercado Pago entran ya confirmados y sin
+     * tarjeta, así que lo que el categorizador no supo ubicar no tenía
+     * arreglo desde el bot. Esto es la cola para arreglarlo de a uno.
+     */
+    public function aCategorizar(int $userId): string
+    {
+        $falta = $this->gastos->cuantoFaltaCategorizar($userId);
+
+        if ($falta['cuantos'] === 0) {
+            return '✅ No queda nada sin clasificar.';
+        }
+
+        $siguiente = $this->gastos->sinCategorizar($userId, 1)[0] ?? null;
+
+        if ($siguiente === null) {
+            return '✅ No queda nada sin clasificar.';
+        }
+
+        $monto = Money::deDecimal((string) $siguiente['monto_ars']);
+
+        return implode("\n", [
+            sprintf(
+                '📁 Quedan <b>%d</b> sin clasificar por <b>%s</b>',
+                $falta['cuantos'],
+                ExpenseCard::escapar($falta['total']->formatear())
+            ),
+            '',
+            '<b>' . ExpenseCard::escapar($monto->formatear()) . '</b>  '
+                . ExpenseCard::escapar(
+                    mb_substr((string) $siguiente['comercio'], 0, 60)
+                ),
+            '<i>' . (new DateTimeImmutable((string) $siguiente['fecha']))->format('d/m/Y') . '</i>',
+            '',
+            '<i>Elegí la categoría y la recuerdo para ese comercio.</i>',
+        ]);
+    }
+
     /** Los gastos que se repiten, con el día en que toca cada uno. */
     public function recurrentes(int $userId): string
     {

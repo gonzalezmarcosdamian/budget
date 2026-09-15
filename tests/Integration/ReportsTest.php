@@ -420,3 +420,66 @@ prueba('[db] las posiciones se listan de mayor a menor', function (): void {
         'primero la posición más grande'
     );
 });
+
+prueba('[db] la cola de clasificacion junta lo que quedo sin categoria y en Otros', function (): void {
+    // Los movimientos de Mercado Pago entran ya confirmados y sin
+    // tarjeta: lo que el categorizador no supo ubicar quedaba sin
+    // arreglo posible desde el bot.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $categorias = new CategoryRepository($pdo);
+    $ana = nuevoUsuario();
+
+    $otros = $categorias->idPorNombre($ana, ExpenseRepository::CATEGORIA_OTROS);
+    $super = $categorias->idPorNombre($ana, 'Supermercado');
+    noEsNulo($otros);
+    noEsNulo($super);
+
+    // Sin categoría.
+    gastoConfirmado($ana, 86_250, 'Forja Centro de Eventos', '2026-09-15');
+
+    // En "Otros", que es lo mismo que sin clasificar.
+    $enOtros = gastoConfirmado($ana, 850_000, 'Ropa Rosario', '2026-09-14');
+    $pdo->exec("UPDATE expenses SET category_id = {$otros} WHERE id = {$enOtros}");
+
+    // Ya clasificado: no entra en la cola.
+    $listo = gastoConfirmado($ana, 40_000, 'Coto', '2026-09-13');
+    $pdo->exec("UPDATE expenses SET category_id = {$super} WHERE id = {$listo}");
+
+    $texto = $reportes->aCategorizar($ana);
+
+    contiene($texto, 'Quedan <b>2</b> sin clasificar', 'los dos, no los tres');
+    contiene($texto, '$936.250', 'con el total pendiente');
+    contiene($texto, 'Ropa Rosario', 'primero el más grande, que es el que mueve la aguja');
+    afirmar(!str_contains($texto, 'Coto'), 'lo ya clasificado no vuelve a aparecer');
+});
+
+prueba('[db] cuando no queda nada sin clasificar lo dice', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    $super = (new CategoryRepository($pdo))->idPorNombre($ana, 'Supermercado');
+    $id = gastoConfirmado($ana, 40_000, 'Coto', '2026-09-13');
+    $pdo->exec("UPDATE expenses SET category_id = {$super} WHERE id = {$id}");
+
+    contiene($reportes->aCategorizar($ana), 'No queda nada sin clasificar');
+});
+
+prueba('[db] la cola no cruza usuarios ni toma ingresos', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario('Ana');
+    $beto = nuevoUsuario('Beto');
+
+    gastoConfirmado($ana, 500_000, 'Sin categoria de Ana', '2026-09-15');
+
+    // Un ingreso sin categoría no es algo que haya que clasificar como
+    // gasto: la cola es de gastos.
+    gastoConfirmado($beto, 700_000, 'Cobro sin categoria', '2026-09-15', Draft::TIPO_INGRESO);
+
+    contiene($reportes->aCategorizar($beto), 'No queda nada sin clasificar');
+    contiene($reportes->aCategorizar($ana), 'Quedan <b>1</b> sin clasificar');
+});

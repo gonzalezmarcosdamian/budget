@@ -125,11 +125,16 @@ final class Dispatcher
             '/flujo', '/caja' => $this->reportes->flujo($userId, $hoy),
             '/anio', '/año' => $this->reportes->delAnio($userId, $hoy),
             '/recurrentes' => $this->reportes->recurrentes($userId),
+            '/revisar' => $this->revisar($userId, $update->chatId),
             '/inversiones' => $this->reportes->inversiones($userId, $hoy),
             default => 'No conozco ese comando. Probá /ayuda.',
         };
 
-        $this->telegram->enviarMensaje($update->chatId, $respuesta);
+        // Un comando que ya mandó su propio mensaje —porque necesitaba
+        // teclado— devuelve vacío para no mandar otro en blanco.
+        if ($respuesta !== '') {
+            $this->telegram->enviarMensaje($update->chatId, $respuesta);
+        }
     }
 
     private function manejarTexto(int $userId, Update $update): void
@@ -667,6 +672,8 @@ final class Dispatcher
             return;
         }
 
+        $yaEstabaConfirmado = ($gasto['estado'] ?? '') === ExpenseRepository::ESTADO_CONFIRMADO;
+
         $this->gastos->recategorizar($userId, $accion['expenseId'], $accion['valor']);
 
         // La corrección se vuelve regla: la próxima vez no hay que
@@ -676,6 +683,12 @@ final class Dispatcher
 
         $this->telegram->responderCallback($update->callbackQueryId, 'Guardado');
         $this->reemplazarTarjeta($userId, $update, $accion['expenseId'], '✅');
+
+        // Si lo que se corrigió ya estaba confirmado, esto es limpieza
+        // de la cola y no la carga de un gasto nuevo: sigue el próximo.
+        if ($yaEstabaConfirmado) {
+            $this->revisar($userId, $update->chatId);
+        }
     }
 
     private function reemplazarTarjeta(int $userId, Update $update, int $expenseId, string $icono): void
@@ -762,6 +775,33 @@ final class Dispatcher
             '• Una foto del ticket, un audio o el PDF del resumen',
             '• /mes para el resumen completo',
         ]);
+    }
+
+    /**
+     * Manda el próximo movimiento sin clasificar, con los botones.
+     *
+     * Devuelve cadena vacía cuando ya mandó el mensaje él mismo: el
+     * teclado no entra por el camino normal de respuesta.
+     */
+    private function revisar(int $userId, int $chatId): string
+    {
+        $texto = $this->reportes->aCategorizar($userId);
+        $siguiente = $this->gastos->sinCategorizar($userId, 1)[0] ?? null;
+
+        if ($siguiente === null) {
+            return $texto;
+        }
+
+        $this->telegram->enviarMensaje(
+            $chatId,
+            $texto,
+            ExpenseCard::tecladoDeCategorias(
+                (int) $siguiente['id'],
+                $this->categorias->disponibles($userId)
+            )
+        );
+
+        return '';
     }
 
     private function ayuda(): string

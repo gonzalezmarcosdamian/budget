@@ -84,6 +84,7 @@ $comandos = [
     '/ultimos' => static fn (): string => $reportes->ultimos($userId),
     '/inversiones' => static fn (): string => $reportes->inversiones($userId, $hoy),
     '/recurrentes' => static fn (): string => $reportes->recurrentes($userId),
+    '/revisar' => static fn (): string => $reportes->aCategorizar($userId),
 ];
 
 $preguntas = [

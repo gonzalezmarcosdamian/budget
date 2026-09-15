@@ -410,6 +410,61 @@ final class ExpenseRepository
         return Money::deDecimal((string) ($fila['total'] ?? '0'));
     }
 
+    /**
+     * La categoría a la que van a parar los movimientos que nadie
+     * clasificó. No es un destino, es una lista de pendientes.
+     */
+    public const CATEGORIA_OTROS = 'Otros';
+
+    /**
+     * Movimientos confirmados que quedaron sin clasificar de verdad.
+     *
+     * Los de Mercado Pago entran ya confirmados y sin tarjeta, así que
+     * los que el categorizador no supo ubicar quedaban sin categoría o
+     * en "Otros" para siempre, sin forma de arreglarlos desde el bot.
+     * Son 248 movimientos y $51 millones: el reporte contesta "en qué se
+     * te va la plata" con "en Otros", que no es una respuesta.
+     *
+     * Van de mayor a menor: clasificar el de $850.000 mueve la aguja y
+     * el de $400 no, y la paciencia para esto es finita.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function sinCategorizar(int $userId, int $limite = 1): array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT e.*
+               FROM expenses e
+               LEFT JOIN categories c ON c.id = e.category_id
+              WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ?
+                AND (e.category_id IS NULL OR c.nombre = ?)
+              ORDER BY e.monto_ars DESC
+              LIMIT ' . max(1, min($limite, 50))
+        );
+        $sentencia->execute([$userId, self::ESTADO_CONFIRMADO, Draft::TIPO_GASTO, self::CATEGORIA_OTROS]);
+
+        return array_values($sentencia->fetchAll());
+    }
+
+    /** @return array{cuantos:int, total:Money} lo que falta clasificar */
+    public function cuantoFaltaCategorizar(int $userId): array
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COUNT(*) AS cuantos, COALESCE(SUM(e.monto_ars), 0) AS total
+               FROM expenses e
+               LEFT JOIN categories c ON c.id = e.category_id
+              WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ?
+                AND (e.category_id IS NULL OR c.nombre = ?)'
+        );
+        $sentencia->execute([$userId, self::ESTADO_CONFIRMADO, Draft::TIPO_GASTO, self::CATEGORIA_OTROS]);
+        $f = $sentencia->fetch() ?: [];
+
+        return [
+            'cuantos' => (int) ($f['cuantos'] ?? 0),
+            'total' => Money::deDecimal((string) ($f['total'] ?? '0')),
+        ];
+    }
+
     /** La categoría de la plata que se presta y vuelve. */
     public const CATEGORIA_PRESTAMOS = 'Préstamos y ayuda';
 

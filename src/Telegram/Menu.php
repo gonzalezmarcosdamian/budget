@@ -32,6 +32,7 @@ final class Menu
         'flujo' => 'Flujo de caja: que entro, que salio y adonde fue',
         'ultimos' => 'Los últimos 10 movimientos',
         'inversiones' => 'El portafolio contra el de hace un mes',
+        'revisar' => 'Clasificar los movimientos que quedaron sin categoria',
         'recurrentes' => 'Los gastos que se repiten todos los meses',
         'ayuda' => 'Todo lo que sé hacer',
     ];
