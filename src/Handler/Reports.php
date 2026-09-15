@@ -527,7 +527,7 @@ final class Reports
             static fn (array $a, array $b): int => $b['valor']->centavos <=> $a['valor']->centavos
         );
 
-        $lineas = ['', '<b>Cartera</b>'];
+        $lineas = ['', '<b>Composición</b>'];
 
         foreach ($ordenadas as $p) {
             $lineas[] = sprintf(
