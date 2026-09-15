@@ -290,3 +290,64 @@ prueba('[db] sin estimados el reporte no agrega ruido', function (): void {
         'la aclaración sólo aparece cuando hace falta'
     );
 });
+
+prueba('[db] un ingreso de alguien a quien no le mandas nada no baja el gasto', function (): void {
+    // El caso que destapó el error: un canon mensual de un cliente.
+    // Con el neto sin piso, esos $120.000 descontaban gasto todos los
+    // meses sin que nadie hubiera gastado menos. Una devolución y un
+    // cobro son lo mismo para la base —plata que entra de alguien— y lo
+    // único que los distingue es si a esa persona también le mandaste.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 500_000, 'Super', '2026-09-05');
+
+    $canon = gastoConfirmado($ana, 120_000, 'Laboratorio', '2026-09-10', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '2825076' WHERE id = {$canon}");
+
+    $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, 'Gasto real: $500.000</b>', 'el canon no descuenta gasto');
+    contiene($texto, 'De terceros: <b>$120.000</b>', 'pero sí figura como ingreso');
+});
+
+prueba('[db] una devolucion si baja el gasto, hasta lo que le mandaste', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    // Le mandé 100.000, me devolvió 70.000: me costó 30.000.
+    $cena = gastoConfirmado($ana, 100_000, 'Beto', '2026-09-05');
+    $vuelto = gastoConfirmado($ana, 70_000, 'Beto', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '111' WHERE id IN ({$cena}, {$vuelto})");
+
+    contiene(
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
+        'Gasto real: $30.000</b>',
+        'lo que le mandaste menos lo que te devolvió'
+    );
+});
+
+prueba('[db] si te devuelven de mas, el exceso no descuenta otros gastos', function (): void {
+    // Beto devolvió más de lo que le mandé. Ese excedente es plata que
+    // entró, no una rebaja sobre el supermercado.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 500_000, 'Super', '2026-09-05');
+
+    $mande = gastoConfirmado($ana, 50_000, 'Beto', '2026-09-06');
+    $volvio = gastoConfirmado($ana, 200_000, 'Beto', '2026-09-07', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '111' WHERE id IN ({$mande}, {$volvio})");
+
+    contiene(
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
+        'Gasto real: $500.000</b>',
+        'el neto con Beto queda en cero, no en menos 150.000'
+    );
+});

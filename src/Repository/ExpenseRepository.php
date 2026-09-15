@@ -421,17 +421,21 @@ final class ExpenseRepository
      * pasar plata de Mercado Pago a tu propio banco no es un gasto, es
      * cambiar de bolsillo. Contarlo infla el total sin que se note.
      *
-     * Por eso los cuatro baldes, y el número que sale de ahí:
+     * De los cuatro baldes sale el número que importa, el gasto real, y
+     * ahí está la sutileza que costó encontrar. La primera versión
+     * restaba *todos* los ingresos de terceros:
      *
-     *     gasto real = egresos a terceros − ingresos de terceros
+     *     gasto real = salió a terceros − entró de terceros   <- mal
      *
-     * Esa resta es la clave. Si pagás $100.000 de una cena y los amigos
-     * te devuelven $70.000, gastaste $30.000. Sin netear, el total dice
-     * $100.000 y nunca se parece a lo que pasó.
+     * Funciona para una devolución —pagás la cena, te devuelven la
+     * parte— pero se rompe con un ingreso genuino: un canon mensual de
+     * un cliente bajaría el gasto del mes sin que nadie gastara menos.
+     * El error aparece porque una devolución y un cobro son lo mismo
+     * para la base: plata que entra de alguien.
      *
-     * Qué es propio y qué es de terceros no lo puede saber Mercado Pago:
-     * un CBU ajeno y uno propio le llegan iguales. Lo marca el usuario
-     * una vez por contraparte, en `contrapartes.es_propia`.
+     * Lo que los distingue es si a esa persona **también le mandaste**.
+     * Por eso el neto se calcula por contraparte y con piso en cero. Ver
+     * gastoRealEntre().
      *
      * @return array{entroTerceros:Money, entroPropio:Money,
      *               salioTerceros:Money, salioPropio:Money,
@@ -494,20 +498,77 @@ final class ExpenseRepository
         $plata = static fn (string $clave): Money
             => Money::deDecimal((string) ($f[$clave] ?? '0'));
 
-        $entroTerceros = $plata('entro_terceros');
-        $salioTerceros = $plata('salio_terceros');
-
         return [
-            'entroTerceros' => $entroTerceros,
+            'entroTerceros' => $plata('entro_terceros'),
             'entroPropio' => $plata('entro_propio'),
-            'salioTerceros' => $salioTerceros,
+            'salioTerceros' => $plata('salio_terceros'),
             'salioPropio' => $plata('salio_propio'),
-            'gastoReal' => $salioTerceros->centavos - $entroTerceros->centavos,
+            'gastoReal' => $this->gastoRealEntre($userId, $desde, $hasta),
             'consumo' => $plata('consumo'),
             'fijos' => $plata('fijos'),
             'prestado' => $plata('prestado'),
             'invertido' => $plata('invertido'),
         ];
+    }
+
+    /**
+     * Lo que realmente se gastó: el neto con cada persona, más comercios.
+     *
+     *     gasto real = SUMA de max(0, enviado - recibido) + comercios
+     *
+     * El piso en cero por contraparte es lo que separa una devolución de
+     * un ingreso. A quien le mandaste $100.000 y te devolvió $70.000, te
+     * costó $30.000. A quien te paga $120.000 todos los meses y nunca le
+     * mandaste nada, el máximo lo deja en cero: su plata es un ingreso,
+     * no un descuento sobre lo que gastaste en otra cosa.
+     *
+     * @return int centavos
+     */
+    private function gastoRealEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): int
+    {
+        $sentencia = $this->pdo->prepare(
+            "SELECT COALESCE(SUM(GREATEST(t.enviado - t.recibido, 0)), 0) AS neto
+               FROM (
+                 SELECT e.contraparte,
+                        SUM(CASE WHEN e.tipo = :gasto THEN e.monto_ars ELSE 0 END) AS enviado,
+                        SUM(CASE WHEN e.tipo = :ingreso THEN e.monto_ars ELSE 0 END) AS recibido
+                   FROM expenses e
+                   LEFT JOIN contrapartes cp
+                          ON cp.externo = e.contraparte AND cp.user_id = e.user_id
+                  WHERE e.user_id = :usuario AND e.estado = :estado
+                    AND e.fecha BETWEEN :desde AND :hasta
+                    AND e.contraparte IS NOT NULL
+                    AND COALESCE(cp.es_propia, 0) = 0
+                  GROUP BY e.contraparte
+               ) t"
+        );
+        $sentencia->execute([
+            'gasto' => Draft::TIPO_GASTO,
+            'ingreso' => Draft::TIPO_INGRESO,
+            'usuario' => $userId,
+            'estado' => self::ESTADO_CONFIRMADO,
+            'desde' => $desde->format('Y-m-d'),
+            'hasta' => $hasta->format('Y-m-d'),
+        ]);
+        $conPersonas = Money::deDecimal((string) ($sentencia->fetchColumn() ?: '0'));
+
+        // Los comercios no tienen contraparte y no devuelven nada: van
+        // enteros.
+        $comercios = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(monto_ars), 0) FROM expenses
+              WHERE user_id = ? AND estado = ? AND tipo = ?
+                AND fecha BETWEEN ? AND ? AND contraparte IS NULL'
+        );
+        $comercios->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        return $conPersonas->centavos
+            + Money::deDecimal((string) ($comercios->fetchColumn() ?: '0'))->centavos;
     }
 
     /**
