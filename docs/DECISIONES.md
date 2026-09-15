@@ -579,22 +579,33 @@ fueron los datos, no los tests.
 
 ---
 
-## 27. No afirmar un balance que no se puede conocer
+## 27. Esto es flujo de caja, no un estado de resultados
 
 **Contexto.** Se agregó `/ingresos` restando gastos de ingresos y anunciando
 "saldo en rojo". Contra los datos reales daba, todos los meses, millones de rojo:
-septiembre cerraba con $107.888 de ingresos contra $3.938.563 de gastos. No es
-que el usuario gaste 36 veces lo que cobra: **el bot ve casi todos los gastos
-—pasan por Mercado Pago— y casi ninguno de los ingresos, porque el sueldo no
-entra por ahí.**
+septiembre cerraba con $107.888 de ingresos contra $3.938.563 de gastos. El
+primer diagnóstico fue que faltaban datos —el sueldo no pasa por Mercado Pago— y
+el primer arreglo, sacar del cálculo lo que "no es gasto": préstamos,
+inversiones, transferencias.
 
-**Decisión.** Cuando la diferencia no cierra, el bot dice que le falta
-información y cómo darle el dato ("cargá el sueldo"), en vez de emitir un
-diagnóstico. Sólo afirma un excedente cuando la resta da a favor, que es el caso
-en que los datos alcanzan para sostenerlo.
+Los dos razonamientos estaban mal, y el usuario lo dijo en tres palabras: **es
+cash flow.**
 
-**Consecuencias.** La regla general, que vale para todo reporte que se agregue:
-**un número con cara de balance construido sobre datos incompletos es peor que no
-mostrar nada**, porque el usuario no tiene forma de saber que le falta la mitad.
-Relacionado: el `/mes` ahora aclara cuánto del total es estimado y no medido,
-por los meses de alquiler reconstruidos con el IPC.
+**Decisión.** El bot no lleva un estado de resultados, lleva **caja**. Lo que
+tiene son movimientos de plata entre cuentas, y la diferencia no es cosmética:
+prestarle a alguien no es un gasto pero la plata se fue igual; comprar CEDEARs no
+empobrece pero la caja baja. Un flujo de caja al que le sacás movimientos porque
+"no son gastos" deja de explicar dónde está la plata, que es para lo único que
+sirve.
+
+Así que `/flujo` no excluye nada: muestra qué entró, qué salió, la **variación de
+caja**, y clasifica la salida en fijos, consumo, prestado e invertido. Los tres
+últimos bajan la caja igual, pero sólo uno es plata que no vuelve.
+
+**Consecuencias.** Se cae el concepto de "saldo" y con él la idea de diagnosticar
+un rojo: la variación de caja es un hecho medible sobre las cuentas que el bot
+ve, y el reporte aclara ese alcance en vez de pronunciarse sobre la economía del
+usuario. La regla general para todo reporte nuevo: **primero decidir qué se está
+midiendo —caja o resultado— porque los mismos datos sostienen un número y no el
+otro.** Relacionado: `/mes` aclara cuánto del total es estimado y no medido, por
+los meses de alquiler reconstruidos con el IPC.

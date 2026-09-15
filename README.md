@@ -28,7 +28,7 @@ gratuitas de varios proveedores de IA.
 Entiende la jerga: `luca` = mil, `palo` = millón, `25k` = 25.000. Y el formato
 argentino de importes: `18.450,75`.
 
-Comandos: `/hoy`, `/mes`, `/anio`, `/ingresos`, `/ultimos`, `/recurrentes`,
+Comandos: `/hoy`, `/mes`, `/anio`, `/flujo`, `/ultimos`, `/recurrentes`,
 `/ayuda`. La lista canónica vive en `Budget\Telegram\Menu` y se publica con
 `php bin/comandos.php`.
 

@@ -410,46 +410,71 @@ final class ExpenseRepository
         return Money::deDecimal((string) ($fila['total'] ?? '0'));
     }
 
-    /** La categoría cuyos movimientos vuelven, y por eso no son consumo. */
+    /** La categoría de la plata que se presta y vuelve. */
     public const CATEGORIA_PRESTAMOS = 'Préstamos y ayuda';
 
     /**
-     * Lo mismo, pero dejando afuera los préstamos.
+     * El flujo de caja del período: qué entró, qué salió y en qué.
      *
-     * Existe para el balance de /ingresos. Prestarle plata a alguien y
-     * que te la devuelva no es gastar ni cobrar: si las dos puntas
-     * entran al balance, el mes en que prestás cierra bajo y el mes en
-     * que te devuelven cierra alto, y las dos cifras son falsas.
+     * El bot no lleva un estado de resultados, lleva **caja**: lo que
+     * tiene son movimientos de plata entre cuentas. La diferencia no es
+     * cosmética. Prestarle a alguien no es un gasto, pero la plata se
+     * fue igual; comprar CEDEARs no empobrece, pero la caja baja. Un
+     * reporte que los saca porque "no son gastos" deja de explicar
+     * dónde está la plata, que es justamente para lo que sirve.
      *
-     * El corte es la categoría y no "tiene contraparte", que fue el
-     * primer intento: el alquiler, la que limpia y la plata del fútbol
-     * también van por transferencia a una persona y son gasto de verdad.
-     * Excluirlas borraba del balance el gasto fijo más grande que hay.
+     * Por eso acá no se excluye nada: se clasifica.
+     *
+     * @return array{entro:Money, salio:Money, consumo:Money, fijos:Money,
+     *               prestado:Money, invertido:Money}
      */
-    public function totalSinPrestamos(
-        int $userId,
-        DateTimeImmutable $desde,
-        DateTimeImmutable $hasta,
-        string $tipo = Draft::TIPO_GASTO,
-    ): Money {
+    public function flujoDeCaja(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
+    {
         $sentencia = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(e.monto_ars), 0) AS total
+            "SELECT
+                COALESCE(SUM(CASE WHEN e.tipo = ? THEN e.monto_ars END), 0) AS entro,
+                COALESCE(SUM(CASE WHEN e.tipo <> ? THEN e.monto_ars END), 0) AS salio,
+                COALESCE(SUM(CASE WHEN e.tipo = ? THEN e.monto_ars END), 0) AS invertido,
+                COALESCE(SUM(CASE WHEN e.tipo = ? AND c.nombre = ? THEN e.monto_ars END), 0) AS prestado,
+                COALESCE(SUM(CASE WHEN e.tipo = ? AND COALESCE(c.nombre,'') <> ?
+                                   AND e.naturaleza = ? THEN e.monto_ars END), 0) AS fijos,
+                COALESCE(SUM(CASE WHEN e.tipo = ? AND COALESCE(c.nombre,'') <> ?
+                                   AND e.naturaleza <> ? THEN e.monto_ars END), 0) AS consumo
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id
-             WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ? AND e.fecha BETWEEN ? AND ?
-               AND COALESCE(c.nombre, \'\') <> ?'
+             WHERE e.user_id = ? AND e.estado = ? AND e.fecha BETWEEN ? AND ?"
         );
+
+        $gasto = Draft::TIPO_GASTO;
+        $ingreso = Draft::TIPO_INGRESO;
+        $fijo = Draft::NATURALEZA_FIJO;
+
         $sentencia->execute([
+            $ingreso,
+            $ingreso,
+            Draft::TIPO_INVERSION,
+            $gasto, self::CATEGORIA_PRESTAMOS,
+            $gasto, self::CATEGORIA_PRESTAMOS, $fijo,
+            $gasto, self::CATEGORIA_PRESTAMOS, $fijo,
             $userId,
             self::ESTADO_CONFIRMADO,
-            $tipo,
             $desde->format('Y-m-d'),
             $hasta->format('Y-m-d'),
-            self::CATEGORIA_PRESTAMOS,
         ]);
-        $fila = $sentencia->fetch();
 
-        return Money::deDecimal((string) ($fila['total'] ?? '0'));
+        $f = $sentencia->fetch() ?: [];
+
+        $comoPlata = static fn (string $clave): Money
+            => Money::deDecimal((string) ($f[$clave] ?? '0'));
+
+        return [
+            'entro' => $comoPlata('entro'),
+            'salio' => $comoPlata('salio'),
+            'consumo' => $comoPlata('consumo'),
+            'fijos' => $comoPlata('fijos'),
+            'prestado' => $comoPlata('prestado'),
+            'invertido' => $comoPlata('invertido'),
+        ];
     }
 
     /**

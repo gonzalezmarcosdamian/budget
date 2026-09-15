@@ -344,63 +344,94 @@ final class Reports
     }
 
     /**
-     * Lo que entró contra lo que salió, sin pasarse de lo que se sabe.
+     * El flujo de caja del mes: qué entró, qué salió y en qué.
      *
-     * Acá había un error de concepto: el bot ve casi todos los gastos
-     * —pasan por Mercado Pago— pero casi ninguno de los ingresos, porque
-     * el sueldo no entra por ahí. Restar uno de otro y anunciar "saldo en
-     * rojo" daba millones de rojo todos los meses y ninguno era cierto.
+     * Acá hubo dos errores de concepto encadenados. El primero fue armar
+     * un estado de resultados —ingresos menos gastos, "saldo en rojo"—
+     * sobre datos que son movimientos de caja. El bot no sabe lo que el
+     * usuario gana: sabe lo que entra y sale de las cuentas que ve.
      *
-     * Un número falso con cara de balance es peor que no mostrar nada,
-     * así que cuando la diferencia no cierra el bot dice que le falta
-     * información en vez de inventar un diagnóstico.
+     * El segundo fue querer arreglarlo sacando del cálculo lo que "no es
+     * gasto": préstamos, inversiones. Pero esa plata se fue de la cuenta
+     * igual. Un flujo de caja al que le sacás movimientos deja de
+     * explicar dónde está la plata, que es para lo único que sirve.
+     *
+     * Así que no se excluye nada: se clasifica, y se aclara hasta dónde
+     * llega lo que el bot ve.
      */
-    public function ingresos(int $userId, DateTimeImmutable $enElMes): string
+    public function flujo(int $userId, DateTimeImmutable $enElMes): string
     {
         $desde = $enElMes->modify('first day of this month');
         $hasta = $enElMes->modify('last day of this month');
+        $f = $this->gastos->flujoDeCaja($userId, $desde, $hasta);
 
-        // Sin los préstamos: prestar y que te devuelvan no es gastar ni
-        // cobrar, y meter las dos puntas hace que el mes en que prestás
-        // cierre bajo y el siguiente alto.
-        $ingresos = $this->gastos->totalSinPrestamos($userId, $desde, $hasta, Draft::TIPO_INGRESO);
-        $gastos = $this->gastos->totalSinPrestamos($userId, $desde, $hasta);
-        $invertido = $this->gastos->totalSinPrestamos($userId, $desde, $hasta, Draft::TIPO_INVERSION);
-
-        if ($ingresos->centavos === 0 && $gastos->centavos === 0) {
-            return '💰 Todavía no hay movimientos este mes.';
+        if ($f['entro']->centavos === 0 && $f['salio']->centavos === 0) {
+            return '💵 Todavía no hay movimientos este mes.';
         }
+
+        $variacion = $f['entro']->centavos - $f['salio']->centavos;
 
         $lineas = [
-            '💰 <b>' . ExpenseCard::escapar(self::nombreDelMes($enElMes, false)) . '</b>',
+            '💵 <b>Flujo de caja — ' . ExpenseCard::escapar(self::nombreDelMes($enElMes, false)) . '</b>',
             '',
-            'Entró: <b>' . ExpenseCard::escapar($ingresos->formatear()) . '</b>',
-            'Salió: <b>' . ExpenseCard::escapar($gastos->formatear()) . '</b>',
+            'Entró: <b>' . ExpenseCard::escapar($f['entro']->formatear()) . '</b>',
+            'Salió: <b>' . ExpenseCard::escapar($f['salio']->formatear()) . '</b>',
             '',
+            sprintf(
+                '%s Variación de caja: <b>%s%s</b>',
+                $variacion >= 0 ? '📈' : '📉',
+                $variacion >= 0 ? '+' : '−',
+                ExpenseCard::escapar(Money::deCentavos(abs($variacion))->formatear())
+            ),
         ];
 
-        $saldo = $ingresos->centavos - $gastos->centavos;
-
-        if ($saldo >= 0) {
-            $lineas[] = '✅ Te sobraron <b>'
-                . ExpenseCard::escapar(Money::deCentavos($saldo)->formatear()) . '</b>';
-        } else {
-            $lineas[] = '❔ No me cuadra: salieron <b>'
-                . ExpenseCard::escapar(Money::deCentavos(-$saldo)->formatear())
-                . '</b> más de los que vi entrar.';
-            $lineas[] = '<i>Si tu sueldo no pasa por Mercado Pago yo no lo veo. '
-                . 'Cargalo cuando cobres —<code>sueldo 2 palos</code>— y esto empieza a cerrar.</i>';
+        foreach (self::destinoDeLaPlata($f) as $linea) {
+            $lineas[] = $linea;
         }
 
-        // La inversión sale de la cuenta pero no se pierde, así que no
-        // resta del saldo: se muestra para saber cuánto del excedente
-        // ya está colocado.
-        if ($invertido->centavos > 0) {
-            $lineas[] = '';
-            $lineas[] = '📈 Invertiste <b>' . ExpenseCard::escapar($invertido->formatear()) . '</b>';
+        $lineas[] = '';
+        $lineas[] = '<i>Sólo las cuentas que veo. Lo que movés por fuera no entra acá.</i>';
+
+        return implode("
+", $lineas);
+    }
+
+    /**
+     * En qué se fue la plata que salió.
+     *
+     * Prestar e invertir van separados del consumo a propósito: los tres
+     * bajan la caja, pero sólo uno es plata que no vuelve.
+     *
+     * @param array{entro:Money, salio:Money, consumo:Money, fijos:Money,
+     *              prestado:Money, invertido:Money} $f
+     * @return list<string>
+     */
+    private static function destinoDeLaPlata(array $f): array
+    {
+        $partes = [
+            ['🔒', 'Fijos', $f['fijos']],
+            ['🛒', 'Consumo', $f['consumo']],
+            ['🤝', 'Prestado', $f['prestado']],
+            ['📈', 'Invertido', $f['invertido']],
+        ];
+
+        $lineas = [];
+
+        foreach ($partes as [$emoji, $nombre, $monto]) {
+            if ($monto->centavos === 0) {
+                continue;
+            }
+
+            $lineas[] = sprintf(
+                '%s %s — <b>%s</b>  <i>%d%%</i>',
+                $emoji,
+                $nombre,
+                ExpenseCard::escapar($monto->formatear()),
+                $monto->porcentajeDe($f['salio'])
+            );
         }
 
-        return implode("\n", $lineas);
+        return $lineas === [] ? [] : array_merge(['', '<b>Adónde fue</b>'], $lineas);
     }
 
     /** Resumen del año, mes a mes. */

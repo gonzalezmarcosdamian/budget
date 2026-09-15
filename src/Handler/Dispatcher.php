@@ -122,7 +122,7 @@ final class Dispatcher
             '/hoy' => $this->reportes->delDia($userId, $hoy),
             '/mes' => $this->reportes->delMes($userId, $hoy),
             '/ultimos' => $this->reportes->ultimos($userId),
-            '/ingresos' => $this->reportes->ingresos($userId, $hoy),
+            '/flujo', '/caja' => $this->reportes->flujo($userId, $hoy),
             '/anio', '/año' => $this->reportes->delAnio($userId, $hoy),
             '/recurrentes' => $this->reportes->recurrentes($userId),
             default => 'No conozco ese comando. Probá /ayuda.',

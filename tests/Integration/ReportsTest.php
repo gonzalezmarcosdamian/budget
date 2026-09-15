@@ -48,7 +48,7 @@ function reportes(): Reports
     );
 }
 
-prueba('[db] /ingresos contrasta lo que entró con lo que salió', function (): void {
+prueba('[db] /flujo muestra que entro, que salio y la variacion de caja', function (): void {
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
@@ -56,42 +56,73 @@ prueba('[db] /ingresos contrasta lo que entró con lo que salió', function (): 
     gastoConfirmado($ana, 2_000_000, 'Sueldo', '2026-09-05', Draft::TIPO_INGRESO);
     gastoConfirmado($ana, 500_000, 'Alquiler', '2026-09-10');
 
-    $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
+    $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
-    contiene($texto, 'Entró: <b>$2.000.000</b>', 'muestra lo que entró');
-    contiene($texto, 'Salió: <b>$500.000</b>', 'muestra lo que salió');
-    contiene($texto, 'Te sobraron <b>$1.500.000</b>', 'el saldo es la diferencia');
-    afirmar(!str_contains($texto, 'en rojo'), 'con saldo positivo no avisa');
+    contiene($texto, 'Entró: <b>$2.000.000</b>');
+    contiene($texto, 'Salió: <b>$500.000</b>');
+    contiene($texto, 'Variación de caja: <b>+$1.500.000</b>', 'la caja subió');
 });
 
-prueba('[db] /ingresos admite que le falta informacion en vez de inventar un rojo', function (): void {
+prueba('[db] cuando sale mas de lo que entra la variacion es negativa', function (): void {
+    // No dice "saldo en rojo": el bot no sabe lo que el usuario gana,
+    // sabe lo que se movió en las cuentas que ve.
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
 
-    gastoConfirmado($ana, 100_000, 'Sueldo', '2026-09-05', Draft::TIPO_INGRESO);
+    gastoConfirmado($ana, 100_000, 'Cobro', '2026-09-05', Draft::TIPO_INGRESO);
     gastoConfirmado($ana, 250_000, 'Alquiler', '2026-09-10');
 
-    $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
+    $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
-    // El bot ve casi todos los gastos y casi ningún ingreso: el
-    // sueldo no pasa por Mercado Pago. Anunciar "saldo en rojo" sería
-    // un diagnóstico falso todos los meses.
-    contiene($texto, 'No me cuadra', 'no afirma un rojo que no puede saber');
-    contiene($texto, 'salieron <b>$150.000</b> más', 'dice cuánto no se explica');
-    contiene($texto, 'sueldo', 'y qué hacer para que cierre');
-    afirmar(!str_contains($texto, 'en rojo'), 'nada de diagnosticar un rojo falso');
+    contiene($texto, 'Variación de caja: <b>−$150.000</b>', 'la caja bajó');
+    contiene($texto, 'Sólo las cuentas que veo', 'y se aclara el alcance');
+    afirmar(!str_contains($texto, 'en rojo'), 'nada de diagnosticar un rojo que no puede saber');
 });
 
-prueba('[db] sin ningún movimiento el reporte no inventa nada', function (): void {
+prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', function (): void {
+    // El error anterior fue excluirlos porque "no son gastos". Pero la
+    // plata se fue de la cuenta igual: un flujo de caja al que le
+    // sacás movimientos deja de explicar dónde está la plata.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $categorias = new CategoryRepository($pdo);
+    $ana = nuevoUsuario();
+
+    $prestamos = $categorias->idPorNombre($ana, ExpenseRepository::CATEGORIA_PRESTAMOS);
+    noEsNulo($prestamos, 'la categoría de préstamos existe en las migraciones');
+
+    gastoConfirmado($ana, 1_000_000, 'Cobro', '2026-09-05', Draft::TIPO_INGRESO);
+    gastoConfirmado($ana, 200_000, 'Super', '2026-09-06');
+
+    $alquiler = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-10');
+    $pdo->exec("UPDATE expenses SET naturaleza = 'fijo', contraparte = '555' WHERE id = {$alquiler}");
+
+    $prestado = gastoConfirmado($ana, 300_000, 'Beto', '2026-09-11');
+    $pdo->exec("UPDATE expenses SET category_id = {$prestamos}, contraparte = '777' WHERE id = {$prestado}");
+
+    gastoConfirmado($ana, 100_000, 'CEDEARs', '2026-09-12', Draft::TIPO_INVERSION);
+
+    $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, 'Salió: <b>$1.000.000</b>', 'todo lo que salió de la cuenta suma');
+    contiene($texto, 'Variación de caja: <b>+$0</b>', 'entró y salió lo mismo');
+    contiene($texto, 'Fijos — <b>$400.000</b>', 'el alquiler es fijo, aunque vaya a una persona');
+    contiene($texto, 'Consumo — <b>$200.000</b>');
+    contiene($texto, 'Prestado — <b>$300.000</b>', 'el préstamo se muestra aparte, no se borra');
+    contiene($texto, 'Invertido — <b>$100.000</b>', 'la inversión también baja la caja');
+});
+
+prueba('[db] sin ningún movimiento el flujo no inventa nada', function (): void {
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
 
     contiene(
-        $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14')),
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
         'Todavía no hay movimientos',
-        'sin datos no hay balance que mostrar'
+        'sin datos no hay flujo que mostrar'
     );
 });
 
@@ -141,60 +172,8 @@ prueba('[db] los reportes no cruzan usuarios', function (): void {
 
     $hoy = new DateTimeImmutable('2026-09-14');
 
-    afirmar(!str_contains($reportes->ingresos($beto, $hoy), '777.777'), 'Beto no ve los ingresos de Ana');
+    afirmar(!str_contains($reportes->flujo($beto, $hoy), '777.777'), 'Beto no ve los ingresos de Ana');
     afirmar(!str_contains($reportes->delAnio($beto, $hoy), '444.444'), 'ni sus gastos');
-});
-
-prueba('[db] el balance no cuenta los prestamos, pero si el alquiler', function (): void {
-    // Prestarle plata a alguien y que te la devuelva no es gastar ni
-    // cobrar. Pero el corte no puede ser "tiene contraparte": el
-    // alquiler y la que limpia también van por transferencia a una
-    // persona, y son el gasto más real que hay.
-    TestDatabase::limpiar();
-    $reportes = reportes();
-    $pdo = TestDatabase::pdo();
-    $categorias = new CategoryRepository($pdo);
-    $ana = nuevoUsuario();
-
-    $prestamos = $categorias->idPorNombre($ana, ExpenseRepository::CATEGORIA_PRESTAMOS);
-    noEsNulo($prestamos, 'la categoría de préstamos existe en las migraciones');
-
-    gastoConfirmado($ana, 2_000_000, 'Sueldo', '2026-09-05', Draft::TIPO_INGRESO);
-    gastoConfirmado($ana, 1_600_000, 'Gastos del mes', '2026-09-10');
-
-    // El alquiler: transferencia a una persona, y es gasto.
-    $alquiler = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-10');
-    $pdo->exec("UPDATE expenses SET contraparte = '555' WHERE id = {$alquiler}");
-
-    // El préstamo y su devolución: ninguno de los dos es consumo.
-    $prestado = gastoConfirmado($ana, 300_000, 'Beto', '2026-09-11');
-    $devuelto = gastoConfirmado($ana, 120_000, 'Beto', '2026-09-12', Draft::TIPO_INGRESO);
-    $pdo->exec(
-        "UPDATE expenses SET contraparte = '777', category_id = {$prestamos}
-          WHERE id IN ({$prestado}, {$devuelto})"
-    );
-
-    $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
-
-    contiene($texto, 'Entró: <b>$2.000.000</b>', 'lo que devolvió Beto no es cobrar');
-    contiene($texto, 'Salió: <b>$2.000.000</b>', 'el alquiler cuenta, el préstamo no');
-    contiene($texto, 'Te sobraron <b>$0</b>', 'el saldo sale del consumo real');
-});
-
-prueba('[db] la inversión se muestra aparte y no resta del saldo', function (): void {
-    TestDatabase::limpiar();
-    $reportes = reportes();
-    $ana = nuevoUsuario();
-
-    gastoConfirmado($ana, 2_000_000, 'Sueldo', '2026-09-05', Draft::TIPO_INGRESO);
-    gastoConfirmado($ana, 800_000, 'Gastos', '2026-09-10');
-    gastoConfirmado($ana, 500_000, 'CEDEARs', '2026-09-11', Draft::TIPO_INVERSION);
-
-    $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
-
-    contiene($texto, 'Salió: <b>$800.000</b>', 'comprar CEDEARs no es un gasto');
-    contiene($texto, 'Te sobraron <b>$1.200.000</b>', 'la plata invertida no se perdió');
-    contiene($texto, 'Invertiste <b>$500.000</b>', 'pero se dice cuánto del excedente ya está colocado');
 });
 
 prueba('[db] /recurrentes lista lo que se repite, con o sin categoría', function (): void {

@@ -49,8 +49,9 @@ prueba('el menú y los comandos que el bot atiende son el mismo conjunto', funct
     preg_match_all("/'\/([a-zA-ZñÑ0-9_]+)'/u", $m[1], $encontrados);
 
     // /start es la puerta de entrada, no un comando del menú; los alias
-    // con eñe no los acepta Telegram y por eso no se publican.
-    $exentos = ['start', 'año'];
+    // con eñe no los acepta Telegram y por eso no se publican; /caja es
+    // un sinónimo de /flujo y publicar los dos sólo llena el menú.
+    $exentos = ['start', 'año', 'caja'];
 
     $detectados = array_values(array_diff(array_unique($encontrados[1]), $exentos));
     $esperados = array_keys(Menu::COMANDOS);

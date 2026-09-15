@@ -29,7 +29,7 @@ final class Menu
         'hoy' => 'Lo del día, contra tu promedio',
         'mes' => 'El mes: fijo vs variable, proyección y transferencias',
         'anio' => 'Mes a mes del año',
-        'ingresos' => 'Lo que entró contra lo que salió',
+        'flujo' => 'Flujo de caja: que entro, que salio y adonde fue',
         'ultimos' => 'Los últimos 10 movimientos',
         'recurrentes' => 'Los gastos que se repiten todos los meses',
         'ayuda' => 'Todo lo que sé hacer',
