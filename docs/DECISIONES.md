@@ -668,3 +668,35 @@ porque se miden distinto: una por rendimiento, la otra por cuánta hay.
 **medido, no supuesto** — con el token de la aplicación,
 `mercadopago_account/balance` devuelve 403 y los endpoints de asset management,
 404. IOL sí se puede leer, pero el bot todavía no tiene credenciales propias.
+
+---
+
+## 30. Un cobro y una devolución son lo mismo para la base
+
+**Contexto.** El ADR 28 definió el gasto real como el neto contra terceros:
+`salió a terceros − entró de terceros`. Funciona para una devolución —pagás la
+cena, te devuelven la parte— y se rompió apenas apareció un ingreso genuino: un
+canon mensual de $120.000 que un cliente paga todos los meses bajaba el gasto del
+mes en $120.000, sin que nadie hubiera gastado menos.
+
+El error es fino y vale anotarlo: para la base **una devolución y un cobro son
+idénticos**, plata que entra de alguien. No hay nada en el movimiento que los
+distinga.
+
+**Decisión.** Lo que los separa es si a esa persona **también le mandaste**. El
+neto se calcula por contraparte y con piso en cero:
+
+```
+gasto real = Σ max(0, enviado − recibido) + gastos a comercios
+```
+
+A quien le mandaste $100.000 y te devolvió $70.000, te costó $30.000. A quien te
+paga y nunca le mandaste nada, el máximo lo deja en cero: su plata queda como
+ingreso y no descuenta lo que gastaste en otra cosa. Si alguien devuelve de más,
+el excedente tampoco rebaja el supermercado.
+
+**Consecuencias.** El cálculo deja de ser una resta de dos totales y pasa a ser
+una agregación por contraparte, con su subconsulta. Vale el costo: es la
+diferencia entre un número que se parece a la realidad y uno que no. La lección
+general, que ya apareció en el ADR 27 con otra cara: **antes de restar dos
+totales, preguntarse si las dos puntas son la misma clase de cosa.**
