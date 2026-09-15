@@ -351,3 +351,72 @@ prueba('[db] si te devuelven de mas, el exceso no descuenta otros gastos', funct
         'el neto con Beto queda en cero, no en menos 150.000'
     );
 });
+
+prueba('[db] con una sola foto igual se ven las inversiones', function (): void {
+    // Este era el agujero: las posiciones sólo se listaban dentro de la
+    // comparación, así que el primer mes el comando mostraba un total
+    // suelto y nada más. El usuario lo dijo en tres palabras: "no veo
+    // inversiones".
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
+    (new PatrimonioRepository(TestDatabase::pdo()))->guardar(
+        $ana,
+        new DateTimeImmutable('2026-09-15'),
+        [
+            [
+                'simbolo' => 'SPY', 'descripcion' => 'S&P 500', 'tipo' => 'CEDEARS',
+                'origen' => 'iol', 'clase' => 'inversion',
+                'cantidad' => 115.0, 'precio' => 20280.0, 'valor' => 2_332_200.0,
+            ],
+            [
+                'simbolo' => 'GLD', 'descripcion' => 'Oro', 'tipo' => 'CEDEARS',
+                'origen' => 'iol', 'clase' => 'inversion',
+                'cantidad' => 67.0, 'precio' => 12560.0, 'valor' => 841_520.0,
+            ],
+            [
+                'simbolo' => 'USD-MP', 'descripcion' => 'Dolares', 'tipo' => 'MONEDA',
+                'origen' => 'mercadopago', 'clase' => 'reserva',
+                'cantidad' => 1000.0, 'precio' => 1450.0, 'valor' => 1_450_000.0,
+            ],
+        ]
+    );
+
+    $texto = $reportes->inversiones($ana, new DateTimeImmutable('2026-09-15'));
+
+    contiene($texto, 'SPY — <b>$2.332.200</b>', 'se ve cada posición, no sólo el total');
+    contiene($texto, 'GLD — <b>$841.520</b>');
+    contiene($texto, 'USD-MP — <b>$1.450.000</b>', 'las reservas también');
+    contiene($texto, 'Cartera: <b>$3.173.720</b>', 'la cartera no incluye las reservas');
+    contiene($texto, 'Reservas: <b>$1.450.000</b>');
+    contiene($texto, 'el mes que viene te digo cuánto rindió', 'y se explica qué falta');
+});
+
+prueba('[db] las posiciones se listan de mayor a menor', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
+    (new PatrimonioRepository(TestDatabase::pdo()))->guardar(
+        $ana,
+        new DateTimeImmutable('2026-09-15'),
+        [
+            [
+                'simbolo' => 'CHICA', 'descripcion' => '', 'tipo' => '',
+                'cantidad' => 1.0, 'precio' => 100.0, 'valor' => 100.0,
+            ],
+            [
+                'simbolo' => 'GRANDE', 'descripcion' => '', 'tipo' => '',
+                'cantidad' => 1.0, 'precio' => 900.0, 'valor' => 900.0,
+            ],
+        ]
+    );
+
+    $texto = $reportes->inversiones($ana, new DateTimeImmutable('2026-09-15'));
+
+    afirmar(
+        strpos($texto, 'GRANDE') < strpos($texto, 'CHICA'),
+        'primero la posición más grande'
+    );
+});

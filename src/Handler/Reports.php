@@ -341,8 +341,7 @@ final class Reports
         $lineas[] = '';
         $lineas[] = '<i>Te aviso el día que toca y lo cargás con un toque.</i>';
 
-        return implode("
-", $lineas);
+        return implode("\n", $lineas);
     }
 
     /**
@@ -407,8 +406,7 @@ final class Reports
         $lineas[] = '';
         $lineas[] = '<i>Sólo las cuentas que veo. Lo que movés por fuera no entra acá.</i>';
 
-        return implode("
-", $lineas);
+        return implode("\n", $lineas);
     }
 
     /**
@@ -491,21 +489,71 @@ final class Reports
 
         $previo = $this->patrimonio->delMesAnterior($userId, $actual['fecha']);
 
-        if ($previo === null) {
-            $lineas[] = '';
-            $lineas[] = '<i>Es la primera foto: todavía no hay contra qué compararla. '
-                . 'El mes que viene sí.</i>';
+        if ($previo !== null) {
+            foreach (self::mesContraMes($cartera, $reservas, $previo) as $linea) {
+                $lineas[] = $linea;
+            }
 
-            return implode("
-", $lineas);
+            return implode("\n", $lineas);
         }
 
-        foreach (self::mesContraMes($cartera, $reservas, $previo) as $linea) {
+        // Sin foto anterior no hay rendimiento que mostrar, pero las
+        // posiciones sí: son las inversiones. La primera versión sólo
+        // las listaba dentro de la comparación, así que el comando
+        // quedaba casi vacío hasta el mes siguiente.
+        foreach (self::composicion($cartera, $reservas) as $linea) {
             $lineas[] = $linea;
         }
 
-        return implode("
-", $lineas);
+        $lineas[] = '';
+        $lineas[] = '<i>Es la primera foto: el mes que viene te digo cuánto rindió.</i>';
+
+        return implode("\n", $lineas);
+    }
+
+    /**
+     * Qué hay en la cartera, de mayor a menor.
+     *
+     * @param array<string,array<string,mixed>> $cartera
+     * @param array<string,array<string,mixed>> $reservas
+     * @return list<string>
+     */
+    private static function composicion(array $cartera, array $reservas): array
+    {
+        $total = self::sumaDe($cartera);
+        $ordenadas = $cartera;
+        uasort(
+            $ordenadas,
+            static fn (array $a, array $b): int => $b['valor']->centavos <=> $a['valor']->centavos
+        );
+
+        $lineas = ['', '<b>Cartera</b>'];
+
+        foreach ($ordenadas as $p) {
+            $lineas[] = sprintf(
+                '%s — <b>%s</b>  <i>%d%%</i>',
+                ExpenseCard::escapar((string) $p['simbolo']),
+                ExpenseCard::escapar($p['valor']->formatear()),
+                $p['valor']->porcentajeDe($total)
+            );
+        }
+
+        if ($reservas === []) {
+            return $lineas;
+        }
+
+        $lineas[] = '';
+        $lineas[] = '<b>Reservas</b>';
+
+        foreach ($reservas as $p) {
+            $lineas[] = sprintf(
+                '%s — <b>%s</b>',
+                ExpenseCard::escapar((string) $p['simbolo']),
+                ExpenseCard::escapar($p['valor']->formatear())
+            );
+        }
+
+        return $lineas;
     }
 
     /**
@@ -651,8 +699,7 @@ final class Reports
         $lineas[] = '';
         $lineas[] = 'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>';
 
-        return implode("
-", $lineas);
+        return implode("\n", $lineas);
     }
 
     public function ultimos(int $userId): string
