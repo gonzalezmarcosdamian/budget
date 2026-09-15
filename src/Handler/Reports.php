@@ -388,7 +388,7 @@ final class Reports
                 $f['gastoReal'] < 0 ? '−' : '',
                 ExpenseCard::escapar(Money::deCentavos(abs($f['gastoReal']))->formatear())
             ),
-            '<i>Lo que saliste a terceros, menos lo que te devolvieron.</i>',
+            '<i>Lo que pagaste, neteado con lo que cada uno te devolvió.</i>',
         ];
 
         $variacion = $entro - $salio;
