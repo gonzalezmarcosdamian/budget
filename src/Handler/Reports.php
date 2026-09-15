@@ -295,14 +295,14 @@ final class Reports
         usort($entraron, static fn (array $a, array $b): int => $a['neto'] <=> $b['neto']);
 
         $bloques = [
-            ['↗', 'Mandaste de más', $salieron],
-            ['↘', 'Te mandaron de más', $entraron],
+            ['↗', '−', 'Mandaste de más', $salieron],
+            ['↘', '+', 'Te mandaron de más', $entraron],
         ];
 
         $lineas = [];
 
-        foreach ($bloques as [$flecha, $titulo, $grupo]) {
-            foreach (self::grupoDeTransferencias($flecha, $titulo, $grupo) as $linea) {
+        foreach ($bloques as [$flecha, $signo, $titulo, $grupo]) {
+            foreach (self::grupoDeTransferencias($flecha, $signo, $titulo, $grupo) as $linea) {
                 $lineas[] = $linea;
             }
         }
@@ -316,7 +316,12 @@ final class Reports
      * @param list<array<string,mixed>> $grupo
      * @return list<string>
      */
-    private static function grupoDeTransferencias(string $flecha, string $titulo, array $grupo): array
+    private static function grupoDeTransferencias(
+        string $flecha,
+        string $signo,
+        string $titulo,
+        array $grupo,
+    ): array
     {
         if ($grupo === []) {
             return [];
@@ -328,8 +333,9 @@ final class Reports
             $nombre = $n['nombre'] !== '' ? $n['nombre'] : $n['contraparte'];
 
             $lineas[] = sprintf(
-                '   %s — <b>%s</b>  <i>(mandaste %s, te devolvieron %s)</i>',
+                '   %s — <b>%s%s</b>  <i>(mandaste %s, te devolvieron %s)</i>',
                 ExpenseCard::escapar(mb_substr($nombre, 0, 26)),
+                $signo,
                 ExpenseCard::escapar(Money::deCentavos(abs($n['neto']))->formatear()),
                 ExpenseCard::escapar($n['enviado']->formatear()),
                 ExpenseCard::escapar($n['recibido']->formatear())
@@ -393,7 +399,7 @@ final class Reports
         foreach ($activos as $r) {
             $lineas[] = sprintf(
                 '%s %s — <b>%s</b>  <i>día %d</i>',
-                (string) ($r['emoji'] ?? '🔔'),
+                ExpenseCard::escapar((string) ($r['emoji'] ?? '🔔')),
                 ExpenseCard::escapar((string) $r['comercio']),
                 ExpenseCard::escapar(Money::deDecimal((string) $r['monto_esperado'])->formatear()),
                 (int) $r['dia_del_mes']
@@ -773,20 +779,26 @@ final class Reports
         $filas = $this->gastos->ultimos($userId);
 
         if ($filas === []) {
-            return 'Todavía no hay gastos confirmados.';
+            return 'Todavía no hay movimientos confirmados.';
         }
 
-        $lineas = ['🧾 <b>Últimos gastos</b>', ''];
+        // Dice "movimientos" y no "gastos" porque la consulta trae las
+        // tres clases. Antes decía gastos y listaba los ingresos entre
+        // ellos: una devolución de $600.000 figuraba como si se hubiera
+        // gastado. El signo es lo que vuelve legible la lista.
+        $lineas = ['🧾 <b>Últimos movimientos</b>', ''];
 
         foreach ($filas as $fila) {
             $monto = Money::deDecimal((string) $fila['monto'], (string) $fila['moneda']);
             $comercio = (string) $fila['comercio'];
+            $entra = (string) $fila['tipo'] === Draft::TIPO_INGRESO;
 
             $lineas[] = sprintf(
-                '%s  %s  %s — <b>%s</b>',
+                '%s  %s  %s — <b>%s%s</b>',
                 (string) $fila['emoji'],
                 self::soloDiaYMes((string) $fila['fecha']),
-                ExpenseCard::escapar($comercio !== '' ? $comercio : 'Gasto'),
+                ExpenseCard::escapar($comercio !== '' ? $comercio : 'Movimiento'),
+                $entra ? '+' : '−',
                 ExpenseCard::escapar($monto->formatear())
             );
         }

@@ -100,9 +100,9 @@ prueba('la referencia del pago es estable', function (): void {
 
 prueba('limpia el apodo autogenerado de Mercado Pago', function (): void {
     // MP arma el apodo con apellido + fecha de registro pegados.
-    esIgual('Delpascual', MercadoPago::nombreLegible('DELPASCUAL20220203174229'));
-    esIgual('Nietomaria', MercadoPago::nombreLegible('NIETOMARIA20230118185650'));
-    esIgual('Goma', MercadoPago::nombreLegible('GOMA1285147'));
+    esIgual('Contraparte', MercadoPago::nombreLegible('CONTRAPARTE20220203174229'));
+    esIgual('Limpieza', MercadoPago::nombreLegible('LIMPIEZA20230118185650'));
+    esIgual('Hermano', MercadoPago::nombreLegible('HERMANO1285147'));
 });
 
 prueba('respeta un apodo elegido por la persona', function (): void {

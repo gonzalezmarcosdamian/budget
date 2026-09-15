@@ -583,7 +583,7 @@ fueron los datos, no los tests.
 
 **Contexto.** Se agregó `/ingresos` restando gastos de ingresos y anunciando
 "saldo en rojo". Contra los datos reales daba, todos los meses, millones de rojo:
-septiembre cerraba con $107.888 de ingresos contra $3.938.563 de gastos. El
+los ingresos visibles eran una fracción mínima de los gastos. El
 primer diagnóstico fue que faltaban datos —el sueldo no pasa por Mercado Pago— y
 el primer arreglo, sacar del cálculo lo que "no es gasto": préstamos,
 inversiones, transferencias.
@@ -618,8 +618,8 @@ los meses de alquiler reconstruidos con el IPC.
 adentro: tratar igual una transferencia a un amigo y una a tu propio banco. Las
 dos bajan la caja de Mercado Pago, pero sólo una es plata que se fue. Y lo que le
 mandás a alguien que después te devuelve tampoco es gasto: contra los datos
-reales, a Pascual le salieron $2.308.000 y volvieron $1.847.382. Sin netear, el
-total se infla un 80% y no se parece a nada.
+reales, a una misma contraparte le salieron ~$2.300.000 y volvieron ~$1.850.000.
+Sin netear, el total se infla un 80% y no se parece a nada.
 
 **Decisión.** El flujo se abre en cuatro y de ahí sale el número que importa:
 
@@ -676,8 +676,8 @@ porque se miden distinto: una por rendimiento, la otra por cuánta hay.
 **Contexto.** El ADR 28 definió el gasto real como el neto contra terceros:
 `salió a terceros − entró de terceros`. Funciona para una devolución —pagás la
 cena, te devuelven la parte— y se rompió apenas apareció un ingreso genuino: un
-canon mensual de $120.000 que un cliente paga todos los meses bajaba el gasto del
-mes en $120.000, sin que nadie hubiera gastado menos.
+canon mensual fijo que un cliente paga todos los meses bajaba el gasto del
+mes en ese mismo importe, sin que nadie hubiera gastado menos.
 
 El error es fino y vale anotarlo: para la base **una devolución y un cobro son
 idénticos**, plata que entra de alguien. No hay nada en el movimiento que los

@@ -142,7 +142,7 @@ prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', 
 
     gastoConfirmado($ana, 200_000, 'Super', '2026-09-06');
 
-    $alquiler = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-10');
+    $alquiler = gastoConfirmado($ana, 400_000, 'Locador', '2026-09-10');
     $pdo->exec("UPDATE expenses SET naturaleza = 'fijo', contraparte = '555' WHERE id = {$alquiler}");
 
     $prestado = gastoConfirmado($ana, 300_000, 'Beto', '2026-09-11');
@@ -235,7 +235,7 @@ prueba('[db] /recurrentes lista lo que se repite, con o sin categoría', functio
         10,
         null,
         'fijo',
-        'Juan Manuel'
+        'Locador'
     );
 
     $texto = $reportes->recurrentes($ana);
@@ -243,7 +243,7 @@ prueba('[db] /recurrentes lista lo que se repite, con o sin categoría', functio
     contiene($texto, 'Alquiler', 'aparece el gasto');
     contiene($texto, '$981.000', 'con el último monto conocido');
     contiene($texto, 'día 10', 'y el día en que toca');
-    contiene($texto, 'Juan Manuel', 'la nota también');
+    contiene($texto, 'Locador', 'la nota también');
     contiene($texto, '🔔', 'sin categoría cae al emoji por defecto');
 });
 
@@ -304,8 +304,8 @@ prueba('[db] un ingreso de alguien a quien no le mandas nada no baja el gasto', 
 
     gastoConfirmado($ana, 500_000, 'Super', '2026-09-05');
 
-    $canon = gastoConfirmado($ana, 120_000, 'Laboratorio', '2026-09-10', Draft::TIPO_INGRESO);
-    $pdo->exec("UPDATE expenses SET contraparte = '2825076' WHERE id = {$canon}");
+    $canon = gastoConfirmado($ana, 120_000, 'Cliente', '2026-09-10', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000002' WHERE id = {$canon}");
 
     $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
@@ -497,8 +497,8 @@ prueba('[db] una amiga que devuelve su parte si descuenta, aunque no le hayas tr
 
     gastoConfirmado($ana, 100_000, 'Restaurante', '2026-09-05');
 
-    $devuelto = gastoConfirmado($ana, 60_000, 'Cami', '2026-09-06', Draft::TIPO_INGRESO);
-    $pdo->exec("UPDATE expenses SET contraparte = '252300561' WHERE id = {$devuelto}");
+    $devuelto = gastoConfirmado($ana, 60_000, 'Amiga', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000001' WHERE id = {$devuelto}");
 
     contiene(
         $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
@@ -508,7 +508,7 @@ prueba('[db] una amiga que devuelve su parte si descuenta, aunque no le hayas tr
 
     $pdo->prepare(
         'INSERT INTO contrapartes (user_id, externo, alias, reintegra) VALUES (?, ?, ?, 1)'
-    )->execute([$ana, '252300561', 'Cami']);
+    )->execute([$ana, '900000001', 'Amiga']);
 
     contiene(
         $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
@@ -527,20 +527,20 @@ prueba('[db] marcar reintegro no convierte un cobro en descuento de otro', funct
 
     gastoConfirmado($ana, 500_000, 'Super', '2026-09-05');
 
-    $canon = gastoConfirmado($ana, 120_000, 'Laboratorio', '2026-09-10', Draft::TIPO_INGRESO);
-    $pdo->exec("UPDATE expenses SET contraparte = '2825076' WHERE id = {$canon}");
+    $canon = gastoConfirmado($ana, 120_000, 'Cliente', '2026-09-10', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000002' WHERE id = {$canon}");
 
-    $devuelto = gastoConfirmado($ana, 60_000, 'Cami', '2026-09-11', Draft::TIPO_INGRESO);
-    $pdo->exec("UPDATE expenses SET contraparte = '252300561' WHERE id = {$devuelto}");
+    $devuelto = gastoConfirmado($ana, 60_000, 'Amiga', '2026-09-11', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000001' WHERE id = {$devuelto}");
 
     $pdo->prepare(
         'INSERT INTO contrapartes (user_id, externo, alias, reintegra) VALUES (?, ?, ?, 1)'
-    )->execute([$ana, '252300561', 'Cami']);
+    )->execute([$ana, '900000001', 'Amiga']);
 
     contiene(
         $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
         'Gasto real: $440.000</b>',
-        'resta los 60.000 de Cami, no los 120.000 del canon'
+        'resta los 60.000 de la amiga, no los 120.000 del canon'
     );
 });
 
@@ -552,14 +552,14 @@ prueba('[db] las transferencias se parten en las que salieron y las que entraron
     $pdo = TestDatabase::pdo();
     $ana = nuevoUsuario();
 
-    // Con Goma quedó debiendo ella: mandó más de lo que le devolvieron.
-    $mande = gastoConfirmado($ana, 900_000, 'Goma', '2026-09-05');
-    $volvio = gastoConfirmado($ana, 300_000, 'Goma', '2026-09-06', Draft::TIPO_INGRESO);
+    // Con la primera quedó debiendo ella: mandó más de lo que le devolvieron.
+    $mande = gastoConfirmado($ana, 900_000, 'Hermano', '2026-09-05');
+    $volvio = gastoConfirmado($ana, 300_000, 'Hermano', '2026-09-06', Draft::TIPO_INGRESO);
     $pdo->exec("UPDATE expenses SET contraparte = '111' WHERE id IN ({$mande}, {$volvio})");
 
     // Con Brian al revés: le devolvieron más de lo que mandó.
-    $poco = gastoConfirmado($ana, 100_000, 'Brian', '2026-09-07');
-    $mucho = gastoConfirmado($ana, 450_000, 'Brian', '2026-09-08', Draft::TIPO_INGRESO);
+    $poco = gastoConfirmado($ana, 100_000, 'Conocido', '2026-09-07');
+    $mucho = gastoConfirmado($ana, 450_000, 'Conocido', '2026-09-08', Draft::TIPO_INGRESO);
     $pdo->exec("UPDATE expenses SET contraparte = '222' WHERE id IN ({$poco}, {$mucho})");
 
     // Compensado del todo: no aporta información, no ocupa lugar.
@@ -571,8 +571,8 @@ prueba('[db] las transferencias se parten en las que salieron y las que entraron
 
     contiene($texto, 'Mandaste de más', 'el grupo de las que salieron');
     contiene($texto, 'Te mandaron de más', 'y el de las que entraron');
-    contiene($texto, 'Goma — <b>$600.000</b>', 'el neto, no el bruto');
-    contiene($texto, 'Brian — <b>$350.000</b>', 'del otro lado, también en positivo');
+    contiene($texto, 'Hermano — <b>$600.000</b>', 'el neto, no el bruto');
+    contiene($texto, 'Conocido — <b>$350.000</b>', 'del otro lado, también en positivo');
     afirmar(!str_contains($texto, 'Nadie'), 'el que compensó todo no ocupa lugar');
 
     afirmar(
@@ -587,11 +587,49 @@ prueba('[db] sin transferencias en un sentido, ese grupo no aparece', function (
     $pdo = TestDatabase::pdo();
     $ana = nuevoUsuario();
 
-    $id = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-05');
+    $id = gastoConfirmado($ana, 400_000, 'Locador', '2026-09-05');
     $pdo->exec("UPDATE expenses SET contraparte = '555' WHERE id = {$id}");
 
     $texto = $reportes->delMes($ana, new DateTimeImmutable('2026-09-14'));
 
     contiene($texto, 'Mandaste de más');
     afirmar(!str_contains($texto, 'Te mandaron de más'), 'un título vacío es ruido');
+});
+
+prueba('[db] /ultimos marca con signo lo que entra y lo que sale', function (): void {
+    // Antes decía "Últimos gastos" y listaba los ingresos entre ellos:
+    // una devolución de $600.000 figuraba como si se hubiera gastado.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 34_000, 'Picada', '2026-09-15');
+    gastoConfirmado($ana, 600_000, 'Hermano', '2026-09-15', Draft::TIPO_INGRESO);
+
+    $texto = $reportes->ultimos($ana);
+
+    contiene($texto, 'Últimos movimientos', 'el título dice lo que la lista contiene');
+    contiene($texto, 'Picada — <b>−$34.000</b>', 'lo que salió, con menos');
+    contiene($texto, 'Hermano — <b>+$600.000</b>', 'lo que entró, con más');
+    afirmar(!str_contains($texto, 'Últimos gastos'), 'ya no promete sólo gastos');
+});
+
+prueba('[db] los netos de transferencias llevan signo', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    $mande = gastoConfirmado($ana, 900_000, 'Uno', '2026-09-05');
+    $volvio = gastoConfirmado($ana, 300_000, 'Uno', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000011' WHERE id IN ({$mande}, {$volvio})");
+
+    $poco = gastoConfirmado($ana, 100_000, 'Otro', '2026-09-07');
+    $mucho = gastoConfirmado($ana, 450_000, 'Otro', '2026-09-08', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000012' WHERE id IN ({$poco}, {$mucho})");
+
+    $texto = $reportes->delMes($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, 'Uno — <b>−$600.000</b>', 'lo que saliste va en negativo');
+    contiene($texto, 'Otro — <b>+$350.000</b>', 'lo que entró va en positivo');
 });

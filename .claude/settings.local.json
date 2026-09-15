@@ -5,7 +5,8 @@
       "Bash(php tests/run.php --unit)",
       "Bash(git add *)",
       "Bash(git -c user.email=ingonzalezdamian@gmail.com -c user.name=Gonzalo commit -q -m 'feat: comando de diagnostico del entorno *)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(php:*)"
     ]
   }
 }

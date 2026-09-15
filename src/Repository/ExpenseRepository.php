@@ -309,7 +309,7 @@ final class ExpenseRepository
     public function pendientesDeLote(int $userId, string $lote, int $limite = 60): array
     {
         $sentencia = $this->pdo->prepare(
-            'SELECT e.id, e.monto, e.moneda, e.fecha, e.comercio,
+            'SELECT e.id, e.monto, e.moneda, e.fecha, e.comercio, e.tipo,
                     COALESCE(c.emoji, ?) AS emoji
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id

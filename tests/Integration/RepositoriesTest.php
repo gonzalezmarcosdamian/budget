@@ -264,11 +264,11 @@ prueba('[db] el neto por contraparte suma las dos puntas', function (): void {
     $dia = new DateTimeImmutable('2026-09-14');
     $pdo = TestDatabase::pdo();
 
-    $enviado = $gastos->guardarBorrador($ana, borradorDe(100_000, 'Pascual'), null);
+    $enviado = $gastos->guardarBorrador($ana, borradorDe(100_000, 'Contraparte'), null);
     $gastos->confirmar($ana, $enviado);
     $pdo->exec("UPDATE expenses SET contraparte = '999' WHERE id = {$enviado}");
 
-    $recibido = $gastos->guardarBorrador($ana, borradorDe(70_000, 'Pascual'), null);
+    $recibido = $gastos->guardarBorrador($ana, borradorDe(70_000, 'Contraparte'), null);
     $gastos->confirmar($ana, $recibido);
     $pdo->exec("UPDATE expenses SET contraparte = '999', tipo = 'ingreso' WHERE id = {$recibido}");
 

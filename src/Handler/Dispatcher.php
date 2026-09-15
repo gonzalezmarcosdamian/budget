@@ -156,9 +156,6 @@ final class Dispatcher
 
         $rapido = $this->parser->parsear($update->texto);
 
-        if ($rapido === null) {
-        }
-
         $borradores = $rapido !== null ? [$rapido] : $this->extraerConIa($userId, $update);
 
         if ($borradores === []) {

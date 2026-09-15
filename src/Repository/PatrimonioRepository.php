@@ -105,6 +105,7 @@ final class PatrimonioRepository
     public function ultimo(int $userId): ?array
     {
         return $this->unoConPosiciones(
+            $userId,
             'SELECT * FROM patrimonio_snapshot WHERE user_id = ? ORDER BY fecha DESC LIMIT 1',
             [$userId]
         );
@@ -128,6 +129,7 @@ final class PatrimonioRepository
         $primeroDelMes = $fecha->modify('first day of this month')->setTime(0, 0);
 
         return $this->unoConPosiciones(
+            $userId,
             'SELECT * FROM patrimonio_snapshot
               WHERE user_id = ? AND fecha < ?
               ORDER BY fecha DESC LIMIT 1',
@@ -136,7 +138,7 @@ final class PatrimonioRepository
     }
 
     /** @param list<mixed> $parametros */
-    private function unoConPosiciones(string $sql, array $parametros): ?array
+    private function unoConPosiciones(int $userId, string $sql, array $parametros): ?array
     {
         $sentencia = $this->pdo->prepare($sql);
         $sentencia->execute($parametros);
@@ -146,10 +148,17 @@ final class PatrimonioRepository
             return null;
         }
 
+        // El user_id va en el WHERE y no confiado al llamador:
+        // `patrimonio_posicion` no tiene columna propia de usuario, así
+        // que sin el join la pertenencia dependería de una invariante
+        // que el próximo método público puede romper sin enterarse.
         $posiciones = $this->pdo->prepare(
-            'SELECT * FROM patrimonio_posicion WHERE snapshot_id = ? ORDER BY valor_ars DESC'
+            'SELECT p.* FROM patrimonio_posicion p
+               JOIN patrimonio_snapshot s ON s.id = p.snapshot_id
+              WHERE p.snapshot_id = ? AND s.user_id = ?
+              ORDER BY p.valor_ars DESC'
         );
-        $posiciones->execute([(int) $fila['id']]);
+        $posiciones->execute([(int) $fila['id'], $userId]);
 
         $porSimbolo = [];
 
