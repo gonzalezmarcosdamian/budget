@@ -77,14 +77,43 @@ final class TestDatabase
      * Deja la base como recién migrada. Las categorías semilla
      * (user_id = 0) sobreviven: son parte del esquema, no datos de prueba.
      */
+    /**
+     * Las tablas que cada test arranca vacías.
+     *
+     * Olvidarse de agregar una tabla nueva acá hace que un test filtre
+     * estado al siguiente, y eso aparece como una falla intermitente en
+     * otro archivo. Un test verifica que no falte ninguna.
+     */
+    private const TABLAS_QUE_SE_VACIAN = [
+        'expenses', 'merchant_rules', 'updates_seen', 'ai_calls',
+        'budgets', 'recurring', 'contrapartes', 'users',
+    ];
+
+    /** Se vacían aparte, o no se vacían nunca, y por qué. */
+    public const TABLAS_APARTE = [
+        // Cuelgan una de otra por clave foránea: van con DELETE.
+        'patrimonio_snapshot', 'patrimonio_posicion',
+        // Las categorías base (user_id 0) son datos de la migración.
+        'categories',
+        // El registro de migraciones aplicadas: vaciarlo re-correría todo.
+        'migrations',
+        // Tokens cifrados de terceros: ningún test los usa.
+        'mp_cuentas',
+    ];
+
     public static function limpiar(): void
     {
         self::exigirBaseDeTests();
         $pdo = self::pdo();
 
-        foreach (['expenses', 'merchant_rules', 'updates_seen', 'ai_calls', 'budgets', 'recurring', 'users'] as $tabla) {
+        foreach (self::TABLAS_QUE_SE_VACIAN as $tabla) {
             $pdo->exec("TRUNCATE TABLE {$tabla}");
         }
+
+        // Con clave foránea entre ellas: TRUNCATE no se puede, y el
+        // orden importa porque las posiciones cuelgan de la foto.
+        $pdo->exec('DELETE FROM patrimonio_posicion');
+        $pdo->exec('DELETE FROM patrimonio_snapshot');
 
         $pdo->exec('DELETE FROM categories WHERE user_id <> 0');
     }

@@ -103,7 +103,7 @@ prueba('[db] el gasto real es el neto contra terceros', function (): void {
 
     contiene(
         $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
-        'Gasto real: <b>$30.000</b>',
+        'Gasto real: $30.000</b>',
         'lo que saliste menos lo que te devolvieron'
     );
 });
@@ -123,7 +123,7 @@ prueba('[db] mover plata a la cuenta propia no cuenta como gasto real', function
 
     $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
-    contiene($texto, 'Gasto real: <b>$200.000</b>', 'los 5 palos cambiaron de bolsillo, no se gastaron');
+    contiene($texto, 'Gasto real: $200.000</b>', 'los 5 palos cambiaron de bolsillo, no se gastaron');
     contiene($texto, 'A cuenta propia: <b>$5.000.000</b>', 'pero se muestran');
 });
 

@@ -293,3 +293,29 @@ prueba('[db] el neto no cruza usuarios', function (): void {
 
     esIgual([], $gastos->netoPorContraparte($beto, $dia, $dia));
 });
+
+prueba('[db] toda tabla nueva entra en la limpieza entre tests', function (): void {
+    // Olvidarse de agregar una tabla a limpiar() hace que un test filtre
+    // estado al siguiente, y eso aparece como una falla intermitente en
+    // otro archivo. Pasó al agregar `contrapartes`: el segundo test que
+    // insertaba la misma contraparte moría por clave duplicada.
+    $enLaBase = TestDatabase::pdo()
+        ->query('SHOW TABLES')
+        ->fetchAll(PDO::FETCH_COLUMN);
+
+    afirmar(count($enLaBase) > 5, 'se leyeron las tablas de la base');
+
+    $reflexion = new ReflectionClass(TestDatabase::class);
+    $cubiertas = array_merge(
+        $reflexion->getConstant('TABLAS_QUE_SE_VACIAN'),
+        TestDatabase::TABLAS_APARTE
+    );
+
+    $huerfanas = array_values(array_diff($enLaBase, $cubiertas));
+
+    esIgual(
+        [],
+        $huerfanas,
+        'estas tablas no las vacía ni las declara TestDatabase: agregalas a una de las dos listas'
+    );
+});
