@@ -6,6 +6,7 @@ use Budget\Expense\Draft;
 use Budget\Handler\Reports;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
+use Budget\Repository\PatrimonioRepository;
 use Budget\Repository\RecurringRepository;
 use Budget\Support\Money;
 use Budget\Tests\Doubles\TestDatabase;
@@ -45,39 +46,85 @@ function reportes(): Reports
         new ExpenseRepository($pdo),
         new CategoryRepository($pdo),
         new RecurringRepository($pdo),
+        new PatrimonioRepository($pdo),
     );
 }
 
-prueba('[db] /flujo muestra que entro, que salio y la variacion de caja', function (): void {
+/** Marca una contraparte como cuenta propia del usuario. */
+function cuentaPropia(int $userId, string $externo, string $alias): void
+{
+    $pdo = TestDatabase::pdo();
+    $pdo->prepare(
+        'INSERT INTO contrapartes (user_id, externo, alias, es_propia) VALUES (?, ?, ?, 1)'
+    )->execute([$userId, $externo, $alias]);
+}
+
+prueba('[db] /flujo separa lo propio de lo de terceros', function (): void {
     TestDatabase::limpiar();
     $reportes = reportes();
+    $pdo = TestDatabase::pdo();
     $ana = nuevoUsuario();
 
-    gastoConfirmado($ana, 2_000_000, 'Sueldo', '2026-09-05', Draft::TIPO_INGRESO);
-    gastoConfirmado($ana, 500_000, 'Alquiler', '2026-09-10');
+    cuentaPropia($ana, '999', 'Mi banco');
+
+    gastoConfirmado($ana, 500_000, 'Cobro de Beto', '2026-09-05', Draft::TIPO_INGRESO);
+
+    // Plata propia entrando desde mi banco: no es un ingreso de verdad.
+    $propio = gastoConfirmado($ana, 800_000, 'Mi banco', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '999' WHERE id = {$propio}");
+
+    gastoConfirmado($ana, 300_000, 'Super', '2026-09-07');
+
+    // Plata volviendo a mi propio banco: tampoco es gasto.
+    $vuelta = gastoConfirmado($ana, 200_000, 'Mi banco', '2026-09-08');
+    $pdo->exec("UPDATE expenses SET contraparte = '999' WHERE id = {$vuelta}");
 
     $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
-    contiene($texto, 'Entró: <b>$2.000.000</b>');
-    contiene($texto, 'Salió: <b>$500.000</b>');
-    contiene($texto, 'Variación de caja: <b>+$1.500.000</b>', 'la caja subió');
+    contiene($texto, 'De terceros: <b>$500.000</b>');
+    contiene($texto, 'Propio: <b>$800.000</b>');
+    contiene($texto, 'A terceros: <b>$300.000</b>');
+    contiene($texto, 'A cuenta propia: <b>$200.000</b>');
 });
 
-prueba('[db] cuando sale mas de lo que entra la variacion es negativa', function (): void {
-    // No dice "saldo en rojo": el bot no sabe lo que el usuario gana,
-    // sabe lo que se movió en las cuentas que ve.
+prueba('[db] el gasto real es el neto contra terceros', function (): void {
+    // Si pagás $100.000 de una cena y te devuelven $70.000, gastaste
+    // $30.000. Sin netear el total dice $100.000 y no se parece a nada.
     TestDatabase::limpiar();
     $reportes = reportes();
+    $pdo = TestDatabase::pdo();
     $ana = nuevoUsuario();
 
-    gastoConfirmado($ana, 100_000, 'Cobro', '2026-09-05', Draft::TIPO_INGRESO);
-    gastoConfirmado($ana, 250_000, 'Alquiler', '2026-09-10');
+    $cena = gastoConfirmado($ana, 100_000, 'Restaurante', '2026-09-05');
+    $pdo->exec("UPDATE expenses SET contraparte = '111' WHERE id = {$cena}");
+
+    $devuelto = gastoConfirmado($ana, 70_000, 'Beto', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '111' WHERE id = {$devuelto}");
+
+    contiene(
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
+        'Gasto real: <b>$30.000</b>',
+        'lo que saliste menos lo que te devolvieron'
+    );
+});
+
+prueba('[db] mover plata a la cuenta propia no cuenta como gasto real', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    cuentaPropia($ana, '999', 'Mi banco');
+
+    gastoConfirmado($ana, 200_000, 'Super', '2026-09-07');
+
+    $mudanza = gastoConfirmado($ana, 5_000_000, 'Mi banco', '2026-09-08');
+    $pdo->exec("UPDATE expenses SET contraparte = '999' WHERE id = {$mudanza}");
 
     $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
-    contiene($texto, 'Variación de caja: <b>−$150.000</b>', 'la caja bajó');
-    contiene($texto, 'Sólo las cuentas que veo', 'y se aclara el alcance');
-    afirmar(!str_contains($texto, 'en rojo'), 'nada de diagnosticar un rojo que no puede saber');
+    contiene($texto, 'Gasto real: <b>$200.000</b>', 'los 5 palos cambiaron de bolsillo, no se gastaron');
+    contiene($texto, 'A cuenta propia: <b>$5.000.000</b>', 'pero se muestran');
 });
 
 prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', function (): void {
@@ -93,7 +140,6 @@ prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', 
     $prestamos = $categorias->idPorNombre($ana, ExpenseRepository::CATEGORIA_PRESTAMOS);
     noEsNulo($prestamos, 'la categoría de préstamos existe en las migraciones');
 
-    gastoConfirmado($ana, 1_000_000, 'Cobro', '2026-09-05', Draft::TIPO_INGRESO);
     gastoConfirmado($ana, 200_000, 'Super', '2026-09-06');
 
     $alquiler = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-10');
@@ -106,12 +152,11 @@ prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', 
 
     $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
 
-    contiene($texto, 'Salió: <b>$1.000.000</b>', 'todo lo que salió de la cuenta suma');
-    contiene($texto, 'Variación de caja: <b>+$0</b>', 'entró y salió lo mismo');
     contiene($texto, 'Fijos — <b>$400.000</b>', 'el alquiler es fijo, aunque vaya a una persona');
     contiene($texto, 'Consumo — <b>$200.000</b>');
     contiene($texto, 'Prestado — <b>$300.000</b>', 'el préstamo se muestra aparte, no se borra');
     contiene($texto, 'Invertido — <b>$100.000</b>', 'la inversión también baja la caja');
+    contiene($texto, 'A cuenta propia: <b>$100.000</b>', 'comprar CEDEARs es mover plata a lo propio');
 });
 
 prueba('[db] sin ningún movimiento el flujo no inventa nada', function (): void {

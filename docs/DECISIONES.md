@@ -609,3 +609,62 @@ usuario. La regla general para todo reporte nuevo: **primero decidir qué se est
 midiendo —caja o resultado— porque los mismos datos sostienen un número y no el
 otro.** Relacionado: `/mes` aclara cuánto del total es estimado y no medido, por
 los meses de alquiler reconstruidos con el IPC.
+
+---
+
+## 28. Plata propia moviéndose no es un gasto, y el gasto real es el neto
+
+**Contexto.** Con el flujo de caja ya bien planteado quedaba un error más
+adentro: tratar igual una transferencia a un amigo y una a tu propio banco. Las
+dos bajan la caja de Mercado Pago, pero sólo una es plata que se fue. Y lo que le
+mandás a alguien que después te devuelve tampoco es gasto: contra los datos
+reales, a Pascual le salieron $2.308.000 y volvieron $1.847.382. Sin netear, el
+total se infla un 80% y no se parece a nada.
+
+**Decisión.** El flujo se abre en cuatro y de ahí sale el número que importa:
+
+```
+entró de terceros · entró propio · salió a terceros · salió a cuenta propia
+gasto real = salió a terceros − entró de terceros
+```
+
+Qué es propio y qué es de terceros **no lo puede saber Mercado Pago**: un CBU
+ajeno y uno propio le llegan iguales. Lo marca el usuario una vez por
+contraparte, en `contrapartes.es_propia`, y el default es `0` porque equivocarse
+hacia "es un gasto" infla un total que se nota, mientras que al revés lo
+escondería.
+
+**Consecuencias.** La compra de CEDEARs cae sola del lado propio: es plata
+cambiando de bolsillo, no consumo. La calidad del número depende de que las
+cuentas propias estén marcadas, así que el reporte sigue aclarando su alcance.
+
+---
+
+## 29. Un mes contra mes de inversiones que no separa precio de aporte, halaga
+
+**Contexto.** `/inversiones` compara la última foto del portafolio contra la de
+hace un mes. El total puede subir por dos razones opuestas: porque los precios
+subieron, o porque entró plata nueva. Un número que las mezcla dice que comprar
+$500.000 de CEDEARs fue ganar $500.000. Encima halaga, que es la peor
+combinación en un reporte de plata.
+
+**Decisión.** La diferencia se descompone, y la descomposición es exacta:
+
+```
+valor_ahora − valor_antes
+    = cantidad_antes × (precio_ahora − precio_antes)    ← rendimiento
+    + (cantidad_ahora − cantidad_antes) × precio_ahora  ← aporte
+```
+
+El rendimiento se mide sobre el valor **inicial**, no sobre el actual: dividir
+por el total de hoy licuaría el resultado justo en el mes en que se aportó, que
+es cuando más importa leerlo bien. Un test verifica la identidad completa.
+
+La cartera de inversión va separada de las reservas —dólares, saldo quieto—
+porque se miden distinto: una por rendimiento, la otra por cuánta hay.
+
+**Consecuencias.** Hace falta una foto por mes, y guardarlas es el motivo de
+`patrimonio_snapshot`. El saldo y las inversiones de Mercado Pago entran a mano:
+**medido, no supuesto** — con el token de la aplicación,
+`mercadopago_account/balance` devuelve 403 y los endpoints de asset management,
+404. IOL sí se puede leer, pero el bot todavía no tiene credenciales propias.

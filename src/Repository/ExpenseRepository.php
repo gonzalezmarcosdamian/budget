@@ -414,66 +414,99 @@ final class ExpenseRepository
     public const CATEGORIA_PRESTAMOS = 'Préstamos y ayuda';
 
     /**
-     * El flujo de caja del período: qué entró, qué salió y en qué.
+     * El flujo de caja del período, separando propio de terceros.
      *
-     * El bot no lleva un estado de resultados, lleva **caja**: lo que
-     * tiene son movimientos de plata entre cuentas. La diferencia no es
-     * cosmética. Prestarle a alguien no es un gasto, pero la plata se
-     * fue igual; comprar CEDEARs no empobrece, pero la caja baja. Un
-     * reporte que los saca porque "no son gastos" deja de explicar
-     * dónde está la plata, que es justamente para lo que sirve.
+     * El bot no lleva un estado de resultados, lleva **caja**. Pero no
+     * toda la caja que se mueve es plata que entra o sale de verdad:
+     * pasar plata de Mercado Pago a tu propio banco no es un gasto, es
+     * cambiar de bolsillo. Contarlo infla el total sin que se note.
      *
-     * Por eso acá no se excluye nada: se clasifica.
+     * Por eso los cuatro baldes, y el número que sale de ahí:
      *
-     * @return array{entro:Money, salio:Money, consumo:Money, fijos:Money,
+     *     gasto real = egresos a terceros − ingresos de terceros
+     *
+     * Esa resta es la clave. Si pagás $100.000 de una cena y los amigos
+     * te devuelven $70.000, gastaste $30.000. Sin netear, el total dice
+     * $100.000 y nunca se parece a lo que pasó.
+     *
+     * Qué es propio y qué es de terceros no lo puede saber Mercado Pago:
+     * un CBU ajeno y uno propio le llegan iguales. Lo marca el usuario
+     * una vez por contraparte, en `contrapartes.es_propia`.
+     *
+     * @return array{entroTerceros:Money, entroPropio:Money,
+     *               salioTerceros:Money, salioPropio:Money,
+     *               gastoReal:int, consumo:Money, fijos:Money,
      *               prestado:Money, invertido:Money}
      */
     public function flujoDeCaja(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
     {
         $sentencia = $this->pdo->prepare(
             "SELECT
-                COALESCE(SUM(CASE WHEN e.tipo = ? THEN e.monto_ars END), 0) AS entro,
-                COALESCE(SUM(CASE WHEN e.tipo <> ? THEN e.monto_ars END), 0) AS salio,
-                COALESCE(SUM(CASE WHEN e.tipo = ? THEN e.monto_ars END), 0) AS invertido,
-                COALESCE(SUM(CASE WHEN e.tipo = ? AND c.nombre = ? THEN e.monto_ars END), 0) AS prestado,
-                COALESCE(SUM(CASE WHEN e.tipo = ? AND COALESCE(c.nombre,'') <> ?
-                                   AND e.naturaleza = ? THEN e.monto_ars END), 0) AS fijos,
-                COALESCE(SUM(CASE WHEN e.tipo = ? AND COALESCE(c.nombre,'') <> ?
-                                   AND e.naturaleza <> ? THEN e.monto_ars END), 0) AS consumo
+                COALESCE(SUM(CASE WHEN e.tipo = :ingreso AND COALESCE(cp.es_propia,0) = 0
+                                  THEN e.monto_ars END), 0) AS entro_terceros,
+                COALESCE(SUM(CASE WHEN e.tipo = :ingreso2 AND COALESCE(cp.es_propia,0) = 1
+                                  THEN e.monto_ars END), 0) AS entro_propio,
+                COALESCE(SUM(CASE WHEN e.tipo <> :ingreso3 AND COALESCE(cp.es_propia,0) = 0
+                                   AND e.tipo <> :inversion
+                                  THEN e.monto_ars END), 0) AS salio_terceros,
+                COALESCE(SUM(CASE WHEN e.tipo <> :ingreso4
+                                   AND (COALESCE(cp.es_propia,0) = 1 OR e.tipo = :inversion2)
+                                  THEN e.monto_ars END), 0) AS salio_propio,
+                COALESCE(SUM(CASE WHEN e.tipo = :inversion3 THEN e.monto_ars END), 0) AS invertido,
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto AND c.nombre = :prestamos
+                                  THEN e.monto_ars END), 0) AS prestado,
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto2 AND COALESCE(c.nombre,'') <> :prestamos2
+                                   AND e.naturaleza = :fijo THEN e.monto_ars END), 0) AS fijos,
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto3 AND COALESCE(c.nombre,'') <> :prestamos3
+                                   AND e.naturaleza <> :fijo2 THEN e.monto_ars END), 0) AS consumo
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id
-             WHERE e.user_id = ? AND e.estado = ? AND e.fecha BETWEEN ? AND ?"
+             LEFT JOIN contrapartes cp
+                    ON cp.externo = e.contraparte AND cp.user_id = e.user_id
+             WHERE e.user_id = :usuario AND e.estado = :estado
+               AND e.fecha BETWEEN :desde AND :hasta"
         );
 
-        $gasto = Draft::TIPO_GASTO;
-        $ingreso = Draft::TIPO_INGRESO;
-        $fijo = Draft::NATURALEZA_FIJO;
-
         $sentencia->execute([
-            $ingreso,
-            $ingreso,
-            Draft::TIPO_INVERSION,
-            $gasto, self::CATEGORIA_PRESTAMOS,
-            $gasto, self::CATEGORIA_PRESTAMOS, $fijo,
-            $gasto, self::CATEGORIA_PRESTAMOS, $fijo,
-            $userId,
-            self::ESTADO_CONFIRMADO,
-            $desde->format('Y-m-d'),
-            $hasta->format('Y-m-d'),
+            'ingreso' => Draft::TIPO_INGRESO,
+            'ingreso2' => Draft::TIPO_INGRESO,
+            'ingreso3' => Draft::TIPO_INGRESO,
+            'ingreso4' => Draft::TIPO_INGRESO,
+            'inversion' => Draft::TIPO_INVERSION,
+            'inversion2' => Draft::TIPO_INVERSION,
+            'inversion3' => Draft::TIPO_INVERSION,
+            'gasto' => Draft::TIPO_GASTO,
+            'gasto2' => Draft::TIPO_GASTO,
+            'gasto3' => Draft::TIPO_GASTO,
+            'prestamos' => self::CATEGORIA_PRESTAMOS,
+            'prestamos2' => self::CATEGORIA_PRESTAMOS,
+            'prestamos3' => self::CATEGORIA_PRESTAMOS,
+            'fijo' => Draft::NATURALEZA_FIJO,
+            'fijo2' => Draft::NATURALEZA_FIJO,
+            'usuario' => $userId,
+            'estado' => self::ESTADO_CONFIRMADO,
+            'desde' => $desde->format('Y-m-d'),
+            'hasta' => $hasta->format('Y-m-d'),
         ]);
 
         $f = $sentencia->fetch() ?: [];
 
-        $comoPlata = static fn (string $clave): Money
+        $plata = static fn (string $clave): Money
             => Money::deDecimal((string) ($f[$clave] ?? '0'));
 
+        $entroTerceros = $plata('entro_terceros');
+        $salioTerceros = $plata('salio_terceros');
+
         return [
-            'entro' => $comoPlata('entro'),
-            'salio' => $comoPlata('salio'),
-            'consumo' => $comoPlata('consumo'),
-            'fijos' => $comoPlata('fijos'),
-            'prestado' => $comoPlata('prestado'),
-            'invertido' => $comoPlata('invertido'),
+            'entroTerceros' => $entroTerceros,
+            'entroPropio' => $plata('entro_propio'),
+            'salioTerceros' => $salioTerceros,
+            'salioPropio' => $plata('salio_propio'),
+            'gastoReal' => $salioTerceros->centavos - $entroTerceros->centavos,
+            'consumo' => $plata('consumo'),
+            'fijos' => $plata('fijos'),
+            'prestado' => $plata('prestado'),
+            'invertido' => $plata('invertido'),
         ];
     }
 

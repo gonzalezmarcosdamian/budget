@@ -24,6 +24,7 @@ final class Pregunta
         'cuanto', 'cuánto', 'cuanta', 'cuánta', 'que gaste', 'qué gasté',
         'en que gaste', 'en qué gasté', 'gaste en', 'gasté en',
         'cuales', 'cuáles', 'total de', 'resumen de', 'mostrame', 'decime',
+        'dame', 'detalle', 'como vengo', 'cómo vengo',
     ];
 
     /** Frase => cuántos meses hacia atrás, o null para el período especial. */
@@ -42,6 +43,7 @@ final class Pregunta
     private function __construct(
         public readonly ?string $categoria,
         public readonly string $periodo,
+        public readonly ?Mes $mes = null,
     ) {
     }
 
@@ -49,15 +51,26 @@ final class Pregunta
      * Devuelve null cuando el mensaje no parece una pregunta. Null es la
      * señal de seguir con el camino normal, no un error.
      */
-    public static function desde(string $texto, CategoryGuesser $categorizador): ?self
-    {
+    public static function desde(
+        string $texto,
+        CategoryGuesser $categorizador,
+        ?DateTimeImmutable $hoy = null,
+    ): ?self {
         $normalizado = CategoryGuesser::normalizar($texto);
 
         if (!self::pareceUnaPregunta($normalizado, $texto)) {
             return null;
         }
 
-        return new self($categorizador->adivinar($texto), self::periodo($normalizado));
+        // Un mes nombrado gana sobre cualquier período relativo: si
+        // alguien dice "agosto 2026" no está preguntando por este mes.
+        $mes = Mes::desde($texto, $hoy ?? new DateTimeImmutable());
+
+        return new self(
+            $categorizador->adivinar($texto),
+            $mes !== null ? 'mes_nombrado' : self::periodo($normalizado),
+            $mes
+        );
     }
 
     private static function pareceUnaPregunta(string $normalizado, string $original): bool
@@ -95,6 +108,10 @@ final class Pregunta
      */
     public function rango(DateTimeImmutable $hoy): array
     {
+        if ($this->mes !== null) {
+            return $this->mes->rango();
+        }
+
         return match ($this->periodo) {
             'dia' => [$hoy, $hoy, 'hoy'],
             'ayer' => [$hoy->modify('-1 day'), $hoy->modify('-1 day'), 'ayer'],

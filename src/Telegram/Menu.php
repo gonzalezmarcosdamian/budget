@@ -31,6 +31,7 @@ final class Menu
         'anio' => 'Mes a mes del año',
         'flujo' => 'Flujo de caja: que entro, que salio y adonde fue',
         'ultimos' => 'Los últimos 10 movimientos',
+        'inversiones' => 'El portafolio contra el de hace un mes',
         'recurrentes' => 'Los gastos que se repiten todos los meses',
         'ayuda' => 'Todo lo que sé hacer',
     ];

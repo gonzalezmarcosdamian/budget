@@ -125,6 +125,7 @@ final class Dispatcher
             '/flujo', '/caja' => $this->reportes->flujo($userId, $hoy),
             '/anio', '/año' => $this->reportes->delAnio($userId, $hoy),
             '/recurrentes' => $this->reportes->recurrentes($userId),
+            '/inversiones' => $this->reportes->inversiones($userId, $hoy),
             default => 'No conozco ese comando. Probá /ayuda.',
         };
 
@@ -138,7 +139,7 @@ final class Dispatcher
         // Antes de intentar extraer un gasto: puede ser una pregunta
         // sobre lo que ya está cargado, y contestarla es gratis.
         if ($rapido === null) {
-            $pregunta = Pregunta::desde($update->texto, new CategoryGuesser());
+            $pregunta = Pregunta::desde($update->texto, new CategoryGuesser(), $this->reloj->ahora());
 
             if ($pregunta !== null) {
                 $this->telegram->enviarMensaje(

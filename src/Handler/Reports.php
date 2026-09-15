@@ -8,6 +8,7 @@ use Budget\Expense\Draft;
 use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
+use Budget\Repository\PatrimonioRepository;
 use Budget\Repository\RecurringRepository;
 use Budget\Support\Money;
 use DateTimeImmutable;
@@ -28,6 +29,7 @@ final class Reports
         private readonly ExpenseRepository $gastos,
         private readonly CategoryRepository $categorias,
         private readonly RecurringRepository $recurrentes,
+        private readonly PatrimonioRepository $patrimonio,
     ) {
     }
 
@@ -344,20 +346,18 @@ final class Reports
     }
 
     /**
-     * El flujo de caja del mes: qué entró, qué salió y en qué.
+     * El flujo de caja del mes, separando lo propio de lo de terceros.
      *
-     * Acá hubo dos errores de concepto encadenados. El primero fue armar
-     * un estado de resultados —ingresos menos gastos, "saldo en rojo"—
-     * sobre datos que son movimientos de caja. El bot no sabe lo que el
-     * usuario gana: sabe lo que entra y sale de las cuentas que ve.
+     * Tres errores de concepto encadenados terminaron acá. El primero
+     * fue armar un estado de resultados sobre datos de caja. El segundo,
+     * querer arreglarlo sacando del cálculo lo que "no es gasto", cuando
+     * esa plata se fue de la cuenta igual. El tercero era más sutil:
+     * tratar igual una transferencia a un amigo y una a tu propio banco.
      *
-     * El segundo fue querer arreglarlo sacando del cálculo lo que "no es
-     * gasto": préstamos, inversiones. Pero esa plata se fue de la cuenta
-     * igual. Un flujo de caja al que le sacás movimientos deja de
-     * explicar dónde está la plata, que es para lo único que sirve.
-     *
-     * Así que no se excluye nada: se clasifica, y se aclara hasta dónde
-     * llega lo que el bot ve.
+     * Mover plata entre bolsillos propios no es gastar. Y lo que le
+     * mandás a alguien que después te devuelve, tampoco: el gasto real
+     * es el **neto** contra terceros. Si pagás $100.000 de una cena y te
+     * devuelven $70.000, gastaste $30.000.
      */
     public function flujo(int $userId, DateTimeImmutable $enElMes): string
     {
@@ -365,25 +365,40 @@ final class Reports
         $hasta = $enElMes->modify('last day of this month');
         $f = $this->gastos->flujoDeCaja($userId, $desde, $hasta);
 
-        if ($f['entro']->centavos === 0 && $f['salio']->centavos === 0) {
+        $entro = $f['entroTerceros']->centavos + $f['entroPropio']->centavos;
+        $salio = $f['salioTerceros']->centavos + $f['salioPropio']->centavos;
+
+        if ($entro === 0 && $salio === 0) {
             return '💵 Todavía no hay movimientos este mes.';
         }
-
-        $variacion = $f['entro']->centavos - $f['salio']->centavos;
 
         $lineas = [
             '💵 <b>Flujo de caja — ' . ExpenseCard::escapar(self::nombreDelMes($enElMes, false)) . '</b>',
             '',
-            'Entró: <b>' . ExpenseCard::escapar($f['entro']->formatear()) . '</b>',
-            'Salió: <b>' . ExpenseCard::escapar($f['salio']->formatear()) . '</b>',
+            '<b>Entró</b>',
+            '  👥 De terceros: <b>' . ExpenseCard::escapar($f['entroTerceros']->formatear()) . '</b>',
+            '  🔁 Propio: <b>' . ExpenseCard::escapar($f['entroPropio']->formatear()) . '</b>',
+            '',
+            '<b>Salió</b>',
+            '  👥 A terceros: <b>' . ExpenseCard::escapar($f['salioTerceros']->formatear()) . '</b>',
+            '  🔁 A cuenta propia: <b>' . ExpenseCard::escapar($f['salioPropio']->formatear()) . '</b>',
             '',
             sprintf(
-                '%s Variación de caja: <b>%s%s</b>',
-                $variacion >= 0 ? '📈' : '📉',
-                $variacion >= 0 ? '+' : '−',
-                ExpenseCard::escapar(Money::deCentavos(abs($variacion))->formatear())
+                '💸 <b>Gasto real: %s%s</b>',
+                $f['gastoReal'] < 0 ? '−' : '',
+                ExpenseCard::escapar(Money::deCentavos(abs($f['gastoReal']))->formatear())
             ),
+            '<i>Lo que saliste a terceros, menos lo que te devolvieron.</i>',
         ];
+
+        $variacion = $entro - $salio;
+        $lineas[] = '';
+        $lineas[] = sprintf(
+            '%s Variación de caja: <b>%s%s</b>',
+            $variacion >= 0 ? '📈' : '📉',
+            $variacion >= 0 ? '+' : '−',
+            ExpenseCard::escapar(Money::deCentavos(abs($variacion))->formatear())
+        );
 
         foreach (self::destinoDeLaPlata($f) as $linea) {
             $lineas[] = $linea;
@@ -402,12 +417,15 @@ final class Reports
      * Prestar e invertir van separados del consumo a propósito: los tres
      * bajan la caja, pero sólo uno es plata que no vuelve.
      *
-     * @param array{entro:Money, salio:Money, consumo:Money, fijos:Money,
-     *              prestado:Money, invertido:Money} $f
+     * @param array<string,mixed> $f
      * @return list<string>
      */
     private static function destinoDeLaPlata(array $f): array
     {
+        $salio = Money::deCentavos(
+            $f['salioTerceros']->centavos + $f['salioPropio']->centavos
+        );
+
         $partes = [
             ['🔒', 'Fijos', $f['fijos']],
             ['🛒', 'Consumo', $f['consumo']],
@@ -427,11 +445,186 @@ final class Reports
                 $emoji,
                 $nombre,
                 ExpenseCard::escapar($monto->formatear()),
-                $monto->porcentajeDe($f['salio'])
+                $monto->porcentajeDe($salio)
             );
         }
 
         return $lineas === [] ? [] : array_merge(['', '<b>Adónde fue</b>'], $lineas);
+    }
+
+    /**
+     * El portafolio hoy contra el de hace un mes.
+     *
+     * Separa la cartera de inversión de las reservas —dólares, saldo
+     * quieto— porque se miden distinto: una por rendimiento, la otra por
+     * cuánta hay. Promediarlas daría un rendimiento licuado por la plata
+     * que está parada a propósito.
+     *
+     * Sobre la cartera, la diferencia se abre en lo que se movió por
+     * precio y lo que se movió por aporte. Ver Patrimonio::comparar.
+     */
+    public function inversiones(int $userId, DateTimeImmutable $hoy): string
+    {
+        $actual = $this->patrimonio->ultimo($userId);
+
+        if ($actual === null) {
+            return "📈 Todavía no tengo ninguna foto del portafolio.
+
+"
+                . '<i>Se toma con <code>php bin/snapshot.php</code>. '
+                . 'Hace falta una por mes para poder comparar.</i>';
+        }
+
+        $cartera = self::deClase($actual['posiciones'], PatrimonioRepository::CLASE_INVERSION);
+        $reservas = self::deClase($actual['posiciones'], PatrimonioRepository::CLASE_RESERVA);
+
+        $lineas = [
+            '📈 <b>Inversiones</b>  <i>(' . $actual['fecha']->format('d/m/Y') . ')</i>',
+            '',
+            'Cartera: <b>' . ExpenseCard::escapar(self::sumaDe($cartera)->formatear()) . '</b>',
+        ];
+
+        if ($reservas !== []) {
+            $lineas[] = 'Reservas: <b>' . ExpenseCard::escapar(self::sumaDe($reservas)->formatear()) . '</b>';
+            $lineas[] = 'Total: <b>' . ExpenseCard::escapar($actual['total']->formatear()) . '</b>';
+        }
+
+        $previo = $this->patrimonio->anteriorA($userId, $actual['fecha']->modify('-1 month'));
+
+        if ($previo === null) {
+            $lineas[] = '';
+            $lineas[] = '<i>Es la primera foto: todavía no hay contra qué compararla. '
+                . 'El mes que viene sí.</i>';
+
+            return implode("
+", $lineas);
+        }
+
+        foreach (self::mesContraMes($cartera, $reservas, $previo) as $linea) {
+            $lineas[] = $linea;
+        }
+
+        return implode("
+", $lineas);
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $posiciones
+     * @return array<string,array<string,mixed>>
+     */
+    private static function deClase(array $posiciones, string $clase): array
+    {
+        return array_filter(
+            $posiciones,
+            static fn (array $p): bool => ($p['clase'] ?? PatrimonioRepository::CLASE_INVERSION) === $clase
+        );
+    }
+
+    /** @param array<string,array{valor:Money}> $posiciones */
+    private static function sumaDe(array $posiciones): Money
+    {
+        $total = 0;
+
+        foreach ($posiciones as $p) {
+            $total += $p['valor']->centavos;
+        }
+
+        return Money::deCentavos($total);
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $cartera
+     * @param array<string,array<string,mixed>> $reservas
+     * @param array<string,mixed> $previo
+     * @return list<string>
+     */
+    private static function mesContraMes(array $cartera, array $reservas, array $previo): array
+    {
+        $c = Patrimonio::comparar(
+            $cartera,
+            self::deClase($previo['posiciones'], PatrimonioRepository::CLASE_INVERSION)
+        );
+
+        $lineas = [
+            '',
+            'Hace un mes la cartera era <b>' . ExpenseCard::escapar($c['anterior']->formatear())
+                . '</b>  <i>(' . $previo['fecha']->format('d/m/Y') . ')</i>',
+            '',
+            sprintf(
+                '%s Rendimiento: <b>%s%s</b>%s',
+                $c['porPrecio'] >= 0 ? '🟢' : '🔴',
+                $c['porPrecio'] >= 0 ? '+' : '−',
+                ExpenseCard::escapar(Money::deCentavos(abs($c['porPrecio']))->formatear()),
+                $c['rendimiento'] === null ? '' : sprintf('  <i>(%+.2f%%)</i>', $c['rendimiento'])
+            ),
+        ];
+
+        // Sin esta línea el rendimiento se lee mal en cualquier mes en
+        // que se haya aportado: el total sube y parece ganancia.
+        if ($c['porAporte'] !== 0) {
+            $lineas[] = sprintf(
+                '%s %s <b>%s</b>  <i>no es rendimiento</i>',
+                $c['porAporte'] > 0 ? '➕' : '➖',
+                $c['porAporte'] > 0 ? 'Aportaste' : 'Retiraste',
+                ExpenseCard::escapar(Money::deCentavos(abs($c['porAporte']))->formatear())
+            );
+        }
+
+        foreach (self::variacionDeReservas($reservas, $previo) as $linea) {
+            $lineas[] = $linea;
+        }
+
+        $lineas[] = '';
+        $lineas[] = '<b>Por posición</b>';
+
+        foreach ($c['posiciones'] as $p) {
+            $lineas[] = self::renglonDePosicion($p);
+        }
+
+        return $lineas;
+    }
+
+    /**
+     * Las reservas no rinden: lo único que informa es si subieron o bajaron.
+     *
+     * @param array<string,array<string,mixed>> $reservas
+     * @param array<string,mixed> $previo
+     * @return list<string>
+     */
+    private static function variacionDeReservas(array $reservas, array $previo): array
+    {
+        if ($reservas === []) {
+            return [];
+        }
+
+        $antes = self::sumaDe(self::deClase($previo['posiciones'], PatrimonioRepository::CLASE_RESERVA));
+        $delta = self::sumaDe($reservas)->centavos - $antes->centavos;
+
+        if ($delta === 0) {
+            return [];
+        }
+
+        return [sprintf(
+            '🏦 Reservas: %s%s respecto del mes pasado',
+            $delta > 0 ? '+' : '−',
+            ExpenseCard::escapar(Money::deCentavos(abs($delta))->formatear())
+        )];
+    }
+
+    /** @param array<string,mixed> $p */
+    private static function renglonDePosicion(array $p): string
+    {
+        $delta = (int) $p['porPrecio'];
+        $variacion = $p['variacion'];
+
+        return sprintf(
+            '%s %s — %s%s%s',
+            $delta >= 0 ? '▲' : '▼',
+            ExpenseCard::escapar((string) $p['simbolo']),
+            '<b>' . ExpenseCard::escapar($p['valor']->formatear()) . '</b>',
+            $variacion === null ? '' : sprintf('  <i>%+.2f%%</i>', $variacion),
+            $p['nueva'] === true ? '  <i>nueva</i>' : ($p['cerrada'] === true ? '  <i>cerrada</i>' : '')
+        );
     }
 
     /** Resumen del año, mes a mes. */

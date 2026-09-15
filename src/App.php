@@ -15,6 +15,7 @@ use Budget\Handler\Reports;
 use Budget\Integracion\SincronizadorMp;
 use Budget\Handler\Recordatorios;
 use Budget\Repository\MercadoPagoRepository;
+use Budget\Repository\PatrimonioRepository;
 use Budget\Repository\RecurringRepository;
 use Budget\Support\Cifrado;
 use Budget\Repository\CategoryRepository;
@@ -128,6 +129,7 @@ final class App
                 new ExpenseRepository($pdo),
                 new CategoryRepository($pdo),
                 new RecurringRepository($pdo),
+                new PatrimonioRepository($pdo),
             ),
             config: $this->config,
             reloj: $this->reloj,
