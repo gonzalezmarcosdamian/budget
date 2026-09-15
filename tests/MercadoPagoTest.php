@@ -137,3 +137,36 @@ prueba('cargar saldo o rescatar una inversión no son ingresos', function (): vo
         esNulo(MercadoPago::aIngreso(pagoMp(['operation_type' => $tipo])), $tipo);
     }
 });
+
+prueba('la contraparte de un cobro es quien pago, no quien cobro', function (): void {
+    // Este fue un error de concepto con consecuencias: para los cobros
+    // se usaba el `collector`, que en un cobro soy yo. Resultado: los
+    // 171 ingresos quedaron sin contraparte y el neteo por persona
+    // —que el usuario pidió explícitamente— no neteaba nada.
+    $cobro = pagoMp([
+        'operation_type' => 'money_transfer',
+        'transaction_amount' => 120000,
+        'payer' => ['id' => 987654321],
+        'collector' => ['id' => 111111111],
+    ]);
+
+    esIgual('987654321', MercadoPago::quienPago($cobro), 'la contraparte es el pagador');
+});
+
+prueba('sin pagador identificable no se inventa una contraparte', function (): void {
+    esNulo(MercadoPago::quienPago(pagoMp([
+        'operation_type' => 'money_transfer',
+        'payer' => ['id' => ''],
+    ])), 'id vacío');
+
+    esNulo(MercadoPago::quienPago(pagoMp([
+        'operation_type' => 'money_transfer',
+    ])), 'sin payer');
+
+    // Cargar saldo no viene de nadie: agrupar eso como contraparte
+    // mezclaría plata propia con transferencias de terceros.
+    esNulo(MercadoPago::quienPago(pagoMp([
+        'operation_type' => 'account_fund',
+        'payer' => ['id' => 987654321],
+    ])), 'no es una transferencia');
+});

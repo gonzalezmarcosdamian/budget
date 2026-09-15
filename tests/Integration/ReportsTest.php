@@ -60,11 +60,11 @@ prueba('[db] /ingresos contrasta lo que entró con lo que salió', function (): 
 
     contiene($texto, 'Entró: <b>$2.000.000</b>', 'muestra lo que entró');
     contiene($texto, 'Salió: <b>$500.000</b>', 'muestra lo que salió');
-    contiene($texto, 'Saldo: <b>$1.500.000</b>', 'el saldo es la diferencia');
+    contiene($texto, 'Te sobraron <b>$1.500.000</b>', 'el saldo es la diferencia');
     afirmar(!str_contains($texto, 'en rojo'), 'con saldo positivo no avisa');
 });
 
-prueba('[db] /ingresos avisa cuando el mes cierra en rojo', function (): void {
+prueba('[db] /ingresos admite que le falta informacion en vez de inventar un rojo', function (): void {
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
@@ -74,21 +74,24 @@ prueba('[db] /ingresos avisa cuando el mes cierra en rojo', function (): void {
 
     $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
 
-    contiene($texto, 'en rojo', 'gastar más de lo que entra se avisa');
-    contiene($texto, 'Saldo: <b>$150.000</b>', 'el saldo va en positivo, el rojo lo dice el texto');
+    // El bot ve casi todos los gastos y casi ningún ingreso: el
+    // sueldo no pasa por Mercado Pago. Anunciar "saldo en rojo" sería
+    // un diagnóstico falso todos los meses.
+    contiene($texto, 'No me cuadra', 'no afirma un rojo que no puede saber');
+    contiene($texto, 'salieron <b>$150.000</b> más', 'dice cuánto no se explica');
+    contiene($texto, 'sueldo', 'y qué hacer para que cierre');
+    afirmar(!str_contains($texto, 'en rojo'), 'nada de diagnosticar un rojo falso');
 });
 
-prueba('[db] sin ingresos cargados el reporte no miente con un cero', function (): void {
+prueba('[db] sin ningún movimiento el reporte no inventa nada', function (): void {
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
 
-    gastoConfirmado($ana, 250_000, 'Alquiler', '2026-09-10');
-
     contiene(
         $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14')),
-        'No hay ingresos cargados',
-        'mejor decir que no hay datos que mostrar un saldo negativo falso'
+        'Todavía no hay movimientos',
+        'sin datos no hay balance que mostrar'
     );
 });
 
@@ -142,28 +145,40 @@ prueba('[db] los reportes no cruzan usuarios', function (): void {
     afirmar(!str_contains($reportes->delAnio($beto, $hoy), '444.444'), 'ni sus gastos');
 });
 
-prueba('[db] el balance no cuenta las transferencias entre personas', function (): void {
+prueba('[db] el balance no cuenta los prestamos, pero si el alquiler', function (): void {
     // Prestarle plata a alguien y que te la devuelva no es gastar ni
-    // cobrar. Si las dos puntas entran al balance, el mes en que
-    // prestás cierra bajo y el mes en que te devuelven cierra alto, y
-    // las dos cifras son falsas.
+    // cobrar. Pero el corte no puede ser "tiene contraparte": el
+    // alquiler y la que limpia también van por transferencia a una
+    // persona, y son el gasto más real que hay.
     TestDatabase::limpiar();
     $reportes = reportes();
     $pdo = TestDatabase::pdo();
+    $categorias = new CategoryRepository($pdo);
     $ana = nuevoUsuario();
+
+    $prestamos = $categorias->idPorNombre($ana, ExpenseRepository::CATEGORIA_PRESTAMOS);
+    noEsNulo($prestamos, 'la categoría de préstamos existe en las migraciones');
 
     gastoConfirmado($ana, 2_000_000, 'Sueldo', '2026-09-05', Draft::TIPO_INGRESO);
     gastoConfirmado($ana, 1_600_000, 'Gastos del mes', '2026-09-10');
 
+    // El alquiler: transferencia a una persona, y es gasto.
+    $alquiler = gastoConfirmado($ana, 400_000, 'Juan Manuel', '2026-09-10');
+    $pdo->exec("UPDATE expenses SET contraparte = '555' WHERE id = {$alquiler}");
+
+    // El préstamo y su devolución: ninguno de los dos es consumo.
     $prestado = gastoConfirmado($ana, 300_000, 'Beto', '2026-09-11');
     $devuelto = gastoConfirmado($ana, 120_000, 'Beto', '2026-09-12', Draft::TIPO_INGRESO);
-    $pdo->exec("UPDATE expenses SET contraparte = '777' WHERE id IN ({$prestado}, {$devuelto})");
+    $pdo->exec(
+        "UPDATE expenses SET contraparte = '777', category_id = {$prestamos}
+          WHERE id IN ({$prestado}, {$devuelto})"
+    );
 
     $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
 
     contiene($texto, 'Entró: <b>$2.000.000</b>', 'lo que devolvió Beto no es cobrar');
-    contiene($texto, 'Salió: <b>$1.600.000</b>', 'prestarle a Beto no es gastar');
-    contiene($texto, 'Saldo: <b>$400.000</b>', 'el saldo sale del consumo propio');
+    contiene($texto, 'Salió: <b>$2.000.000</b>', 'el alquiler cuenta, el préstamo no');
+    contiene($texto, 'Te sobraron <b>$0</b>', 'el saldo sale del consumo real');
 });
 
 prueba('[db] la inversión se muestra aparte y no resta del saldo', function (): void {
@@ -178,8 +193,8 @@ prueba('[db] la inversión se muestra aparte y no resta del saldo', function ():
     $texto = $reportes->ingresos($ana, new DateTimeImmutable('2026-09-14'));
 
     contiene($texto, 'Salió: <b>$800.000</b>', 'comprar CEDEARs no es un gasto');
-    contiene($texto, 'Saldo: <b>$1.200.000</b>', 'la plata invertida no se perdió');
-    contiene($texto, 'invertiste <b>$500.000</b>', 'pero se dice cuánto del excedente ya está colocado');
+    contiene($texto, 'Te sobraron <b>$1.200.000</b>', 'la plata invertida no se perdió');
+    contiene($texto, 'Invertiste <b>$500.000</b>', 'pero se dice cuánto del excedente ya está colocado');
 });
 
 prueba('[db] /recurrentes lista lo que se repite, con o sin categoría', function (): void {
@@ -218,4 +233,36 @@ prueba('[db] /recurrentes de otro usuario no se ve', function (): void {
         ->crear($ana, 'Alquiler de Ana', Money::deCentavos(981_000_00), 10, null);
 
     contiene($reportes->recurrentes($beto), 'No tenés gastos recurrentes', 'Beto no ve lo de Ana');
+});
+
+prueba('[db] /mes aclara cuanto del total es estimado', function (): void {
+    // Diez de los dieciocho meses de alquiler se reconstruyeron con el
+    // IPC porque se pagaron por otra app. Mostrarlos sin aclararlo los
+    // presenta como un dato medido, y no lo son.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 200_000, 'Super', '2026-09-03');
+    $supuesto = gastoConfirmado($ana, 981_000, 'Alquiler', '2026-09-10');
+    $pdo->exec("UPDATE expenses SET fuente = 'estimado' WHERE id = {$supuesto}");
+
+    $texto = $reportes->delMes($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, '$1.181.000', 'el total los incluye');
+    contiene($texto, '$981.000 son estimados', 'pero dice cuánto no se midió');
+});
+
+prueba('[db] sin estimados el reporte no agrega ruido', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 200_000, 'Super', '2026-09-03');
+
+    afirmar(
+        !str_contains($reportes->delMes($ana, new DateTimeImmutable('2026-09-14')), 'estimados'),
+        'la aclaración sólo aparece cuando hace falta'
+    );
 });

@@ -382,25 +382,62 @@ final class ExpenseRepository
      * signifique nada.
      */
     /**
-     * Lo mismo, pero dejando afuera las transferencias entre personas.
+     * Cuánto de un período es supuesto y no medido.
+     *
+     * Diez de los dieciocho meses de alquiler se reconstruyeron a partir
+     * del IPC, porque se pagaron por otra app. Son la mejor estimación
+     * que hay, pero no son un dato: el reporte tiene que poder decirlo
+     * en vez de presentarlos como si alguien los hubiera visto.
+     */
+    public function totalEstimadoEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): Money
+    {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(monto_ars), 0) AS total
+             FROM expenses
+             WHERE user_id = ? AND estado = ? AND tipo = ? AND fuente = ?
+               AND fecha BETWEEN ? AND ?'
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            Draft::FUENTE_ESTIMADO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+        $fila = $sentencia->fetch();
+
+        return Money::deDecimal((string) ($fila['total'] ?? '0'));
+    }
+
+    /** La categoría cuyos movimientos vuelven, y por eso no son consumo. */
+    public const CATEGORIA_PRESTAMOS = 'Préstamos y ayuda';
+
+    /**
+     * Lo mismo, pero dejando afuera los préstamos.
      *
      * Existe para el balance de /ingresos. Prestarle plata a alguien y
      * que te la devuelva no es gastar ni cobrar: si las dos puntas
      * entran al balance, el mes en que prestás cierra bajo y el mes en
-     * que te devuelven cierra alto, y las dos cifras son falsas. Las
-     * transferencias se muestran neteadas aparte, en /mes.
+     * que te devuelven cierra alto, y las dos cifras son falsas.
+     *
+     * El corte es la categoría y no "tiene contraparte", que fue el
+     * primer intento: el alquiler, la que limpia y la plata del fútbol
+     * también van por transferencia a una persona y son gasto de verdad.
+     * Excluirlas borraba del balance el gasto fijo más grande que hay.
      */
-    public function totalPropioEntre(
+    public function totalSinPrestamos(
         int $userId,
         DateTimeImmutable $desde,
         DateTimeImmutable $hasta,
         string $tipo = Draft::TIPO_GASTO,
     ): Money {
         $sentencia = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(monto_ars), 0) AS total
-             FROM expenses
-             WHERE user_id = ? AND estado = ? AND tipo = ? AND fecha BETWEEN ? AND ?
-               AND contraparte IS NULL'
+            'SELECT COALESCE(SUM(e.monto_ars), 0) AS total
+             FROM expenses e
+             LEFT JOIN categories c ON c.id = e.category_id
+             WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ? AND e.fecha BETWEEN ? AND ?
+               AND COALESCE(c.nombre, \'\') <> ?'
         );
         $sentencia->execute([
             $userId,
@@ -408,6 +445,7 @@ final class ExpenseRepository
             $tipo,
             $desde->format('Y-m-d'),
             $hasta->format('Y-m-d'),
+            self::CATEGORIA_PRESTAMOS,
         ]);
         $fila = $sentencia->fetch();
 

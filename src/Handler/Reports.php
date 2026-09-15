@@ -242,6 +242,23 @@ final class Reports
             );
         }
 
+        // Los meses de alquiler que se pagaron por otra app se
+        // reconstruyeron con el IPC. Son la mejor estimación que hay,
+        // pero presentarlos sin aclararlo los convierte en un dato
+        // medido, y no lo son.
+        $estimado = $this->gastos->totalEstimadoEntre(
+            $userId,
+            $desde,
+            $hoy->modify('last day of this month')
+        );
+
+        if ($estimado->centavos > 0) {
+            $lineas[] = sprintf(
+                '❓ <i>%s son estimados, no medidos</i>',
+                ExpenseCard::escapar($estimado->formatear())
+            );
+        }
+
         return $lineas;
     }
 
@@ -326,49 +343,64 @@ final class Reports
 ", $lineas);
     }
 
-    /** Lo que entró: sueldos, devoluciones, cobros. */
+    /**
+     * Lo que entró contra lo que salió, sin pasarse de lo que se sabe.
+     *
+     * Acá había un error de concepto: el bot ve casi todos los gastos
+     * —pasan por Mercado Pago— pero casi ninguno de los ingresos, porque
+     * el sueldo no entra por ahí. Restar uno de otro y anunciar "saldo en
+     * rojo" daba millones de rojo todos los meses y ninguno era cierto.
+     *
+     * Un número falso con cara de balance es peor que no mostrar nada,
+     * así que cuando la diferencia no cierra el bot dice que le falta
+     * información en vez de inventar un diagnóstico.
+     */
     public function ingresos(int $userId, DateTimeImmutable $enElMes): string
     {
         $desde = $enElMes->modify('first day of this month');
         $hasta = $enElMes->modify('last day of this month');
 
-        // Sin las transferencias entre personas: prestar y que te
-        // devuelvan no es gastar ni cobrar, y meter las dos puntas hace
-        // que el mes en que prestás cierre bajo y el siguiente alto.
-        $ingresos = $this->gastos->totalPropioEntre($userId, $desde, $hasta, Draft::TIPO_INGRESO);
-        $gastos = $this->gastos->totalPropioEntre($userId, $desde, $hasta);
-        $invertido = $this->gastos->totalPropioEntre($userId, $desde, $hasta, Draft::TIPO_INVERSION);
+        // Sin los préstamos: prestar y que te devuelvan no es gastar ni
+        // cobrar, y meter las dos puntas hace que el mes en que prestás
+        // cierre bajo y el siguiente alto.
+        $ingresos = $this->gastos->totalSinPrestamos($userId, $desde, $hasta, Draft::TIPO_INGRESO);
+        $gastos = $this->gastos->totalSinPrestamos($userId, $desde, $hasta);
+        $invertido = $this->gastos->totalSinPrestamos($userId, $desde, $hasta, Draft::TIPO_INVERSION);
 
-        if ($ingresos->centavos === 0) {
-            return '💰 No hay ingresos cargados este mes.';
+        if ($ingresos->centavos === 0 && $gastos->centavos === 0) {
+            return '💰 Todavía no hay movimientos este mes.';
         }
 
         $lineas = [
-            '💰 <b>Ingresos de ' . ExpenseCard::escapar(self::nombreDelMes($enElMes, false)) . '</b>',
+            '💰 <b>' . ExpenseCard::escapar(self::nombreDelMes($enElMes, false)) . '</b>',
             '',
             'Entró: <b>' . ExpenseCard::escapar($ingresos->formatear()) . '</b>',
             'Salió: <b>' . ExpenseCard::escapar($gastos->formatear()) . '</b>',
+            '',
         ];
 
-        // El número que importa: si el saldo es negativo, este mes
-        // gastaste más de lo que entró.
         $saldo = $ingresos->centavos - $gastos->centavos;
-        $lineas[] = '';
-        $lineas[] = sprintf(
-            '%s Saldo: <b>%s</b>',
-            $saldo >= 0 ? '✅' : '⚠️',
-            ExpenseCard::escapar(Money::deCentavos(abs($saldo))->formatear())
-        ) . ($saldo < 0 ? ' <i>en rojo</i>' : '');
+
+        if ($saldo >= 0) {
+            $lineas[] = '✅ Te sobraron <b>'
+                . ExpenseCard::escapar(Money::deCentavos($saldo)->formatear()) . '</b>';
+        } else {
+            $lineas[] = '❔ No me cuadra: salieron <b>'
+                . ExpenseCard::escapar(Money::deCentavos(-$saldo)->formatear())
+                . '</b> más de los que vi entrar.';
+            $lineas[] = '<i>Si tu sueldo no pasa por Mercado Pago yo no lo veo. '
+                . 'Cargalo cuando cobres —<code>sueldo 2 palos</code>— y esto empieza a cerrar.</i>';
+        }
 
         // La inversión sale de la cuenta pero no se pierde, así que no
         // resta del saldo: se muestra para saber cuánto del excedente
         // ya está colocado.
         if ($invertido->centavos > 0) {
-            $lineas[] = '📈 De eso invertiste <b>' . ExpenseCard::escapar($invertido->formatear()) . '</b>';
+            $lineas[] = '';
+            $lineas[] = '📈 Invertiste <b>' . ExpenseCard::escapar($invertido->formatear()) . '</b>';
         }
 
-        return implode("
-", $lineas);
+        return implode("\n", $lineas);
     }
 
     /** Resumen del año, mes a mes. */

@@ -552,3 +552,49 @@ estáticas y los type hints quedan fuera por ahora, porque el autoloader los
 resuelve en el mismo momento y el costo de tokenizarlos no se justificaba
 todavía. La lección general: un lenguaje con resolución de nombres en runtime
 necesita un chequeo en tests, no alcanza con el linter.
+
+---
+
+## 26. En un cobro, la contraparte es quien paga
+
+**Contexto.** `contraparteDe()` devuelve el `collector` de un pago de Mercado
+Pago: correcto para una transferencia que mando, porque el que cobra es el otro.
+La importación de cobros reusó esa misma función, y en un cobro el `collector`
+soy yo. Resultado medido en producción: **171 de 172 ingresos quedaron sin
+contraparte**, todos llamados "Transferencia". El neteo por persona —que el
+usuario pidió explícitamente, "siempre hacé neto en transferencia"— mostraba
+"recibido $0" en todas las filas. La función existía, se veía bien y no neteaba
+nada.
+
+**Decisión.** `MercadoPago::quienPago()` lee `payer.id`, que además viene en la
+respuesta de la búsqueda: el cobro no necesita la llamada extra al detalle que sí
+necesita el pago. Al cobro se le aplica el mismo alias que al pago, para que el
+neteo diga un nombre y no "Transferencia" contra "Transferencia".
+
+**Consecuencias.** Sólo arregla los cobros nuevos: los ya importados no se tocan
+por el índice único de `origen_externo`, así que la contraparte de los viejos se
+rellena aparte. La lección: una función de una sola dirección reusada para la
+otra dirección compila, corre y devuelve un valor plausible. Lo que la delató
+fueron los datos, no los tests.
+
+---
+
+## 27. No afirmar un balance que no se puede conocer
+
+**Contexto.** Se agregó `/ingresos` restando gastos de ingresos y anunciando
+"saldo en rojo". Contra los datos reales daba, todos los meses, millones de rojo:
+septiembre cerraba con $107.888 de ingresos contra $3.938.563 de gastos. No es
+que el usuario gaste 36 veces lo que cobra: **el bot ve casi todos los gastos
+—pasan por Mercado Pago— y casi ninguno de los ingresos, porque el sueldo no
+entra por ahí.**
+
+**Decisión.** Cuando la diferencia no cierra, el bot dice que le falta
+información y cómo darle el dato ("cargá el sueldo"), en vez de emitir un
+diagnóstico. Sólo afirma un excedente cuando la resta da a favor, que es el caso
+en que los datos alcanzan para sostenerlo.
+
+**Consecuencias.** La regla general, que vale para todo reporte que se agregue:
+**un número con cara de balance construido sobre datos incompletos es peor que no
+mostrar nada**, porque el usuario no tiene forma de saber que le falta la mitad.
+Relacionado: el `/mes` ahora aclara cuánto del total es estimado y no medido,
+por los meses de alquiler reconstruidos con el IPC.

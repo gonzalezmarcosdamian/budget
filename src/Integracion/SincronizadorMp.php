@@ -124,7 +124,7 @@ final class SincronizadorMp
             }
 
             foreach (array_reverse($cobros) as $cobro) {
-                $nuevos += $this->importarCobro($userId, $cobro, $lote, $cliente);
+                $nuevos += $this->importarCobro($userId, $cobro, $lote);
             }
 
             if (count($cobros) < self::POR_PAGINA) {
@@ -211,7 +211,7 @@ final class SincronizadorMp
      * @param array<string,mixed> $pago
      * @return int 1 si se importó, 0 si ya estaba o no corresponde
      */
-    private function importarCobro(int $userId, array $pago, string $lote, MercadoPago $cliente): int
+    private function importarCobro(int $userId, array $pago, string $lote): int
     {
         $borrador = MercadoPago::aIngreso($pago);
 
@@ -219,12 +219,18 @@ final class SincronizadorMp
             return 0;
         }
 
-        $contraparte = null;
+        // En un cobro el `collector` soy yo: la contraparte es quien
+        // pagó. Viene en la misma respuesta, sin llamada extra.
+        $contraparte = MercadoPago::quienPago($pago);
 
-        try {
-            $contraparte = $cliente->contraparteDe($pago);
-        } catch (Throwable) {
-            $contraparte = null;
+        if ($contraparte !== null) {
+            $alias = $this->aliasDeContraparte($userId, $contraparte);
+
+            // Sin el nombre, el neteo lista "Transferencia" contra
+            // "Transferencia" y no se entiende con quién se compensó.
+            if ($alias !== null) {
+                $borrador = $borrador->conComercio($alias);
+            }
         }
 
         $id = $this->gastos->guardarBorrador(

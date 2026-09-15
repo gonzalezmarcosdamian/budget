@@ -86,11 +86,11 @@ final class MercadoPago
     }
 
     /**
-     * Quién cobró una transferencia.
+     * Quién cobró una transferencia que mandé.
      *
-     * La búsqueda de pagos no lo trae: hay que pedir el detalle. Es una
-     * llamada más por movimiento, y vale la pena sólo para las
-     * transferencias, que sin esto quedan todas como "Varios".
+     * La búsqueda de pagos no trae el `collector`: hay que pedir el
+     * detalle. Es una llamada más por movimiento, y vale la pena sólo
+     * para las transferencias, que sin esto quedan todas como "Varios".
      *
      * @param array<string,mixed> $pago
      */
@@ -111,6 +111,32 @@ final class MercadoPago
         $collectorId = is_array($collector) ? ($collector['id'] ?? null) : null;
 
         return $collectorId === null ? null : (string) $collectorId;
+    }
+
+    /**
+     * Quién me mandó una transferencia.
+     *
+     * No es lo mismo que `contraparteDe`: en un cobro el `collector` soy
+     * yo, así que usar ese campo etiqueta todos los ingresos con mi
+     * propio id y el neteo por persona no netea nada. El que importa es
+     * el `payer`, y ese sí viene en la búsqueda, sin llamada extra.
+     *
+     * @param array<string,mixed> $pago
+     */
+    public static function quienPago(array $pago): ?string
+    {
+        if ((string) ($pago['operation_type'] ?? '') !== 'money_transfer') {
+            return null;
+        }
+
+        $payer = $pago['payer'] ?? null;
+        $payerId = is_array($payer) ? ($payer['id'] ?? null) : null;
+
+        if ($payerId === null || (string) $payerId === '') {
+            return null;
+        }
+
+        return (string) $payerId;
     }
 
     /**
