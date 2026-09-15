@@ -111,19 +111,27 @@ final class PatrimonioRepository
     }
 
     /**
-     * La foto más cercana a una fecha, mirando sólo hacia atrás.
+     * La última foto anterior al mes de una fecha dada.
      *
-     * Hacia atrás y no la más cercana en cualquier dirección: comparar
-     * el 15 de septiembre contra el 20 de agosto es un mes; contra el 10
-     * de septiembre no es nada, y daría una variación mensual falsa.
+     * El corte es el mes y no "hace treinta días", que fue el primer
+     * intento y se rompía solo: con una foto el 20 de agosto y otra el
+     * 15 de septiembre, "hace un mes" cae el 15 de agosto y la de agosto
+     * queda afuera. El bot habría dicho "es la primera foto" teniendo
+     * una del mes anterior.
+     *
+     * Tampoco sirve la más cercana en cualquier dirección: comparar el
+     * 15 de septiembre contra el 10 de septiembre no es un mes, y daría
+     * una variación mensual falsa.
      */
-    public function anteriorA(int $userId, DateTimeImmutable $fecha): ?array
+    public function delMesAnterior(int $userId, DateTimeImmutable $fecha): ?array
     {
+        $primeroDelMes = $fecha->modify('first day of this month')->setTime(0, 0);
+
         return $this->unoConPosiciones(
             'SELECT * FROM patrimonio_snapshot
-              WHERE user_id = ? AND fecha <= ?
+              WHERE user_id = ? AND fecha < ?
               ORDER BY fecha DESC LIMIT 1',
-            [$userId, $fecha->format('Y-m-d')]
+            [$userId, $primeroDelMes->format('Y-m-d')]
         );
     }
 

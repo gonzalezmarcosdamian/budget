@@ -50,7 +50,7 @@ prueba('[db] una foto vuelve con precio y cantidad intactos', function (): void 
 
     noEsNulo($foto);
     esIgual('2026-09-15', $foto['fecha']->format('Y-m-d'));
-    esIgual(675_270_000, $foto['total']->centavos, '2.332.200 + 1.450.000');
+    esIgual(378_220_000, $foto['total']->centavos, '2.332.200 + 1.450.000');
 
     $spy = $foto['posiciones']['SPY'];
     esIgual(115.0, $spy['cantidad']);
@@ -91,10 +91,10 @@ prueba('[db] volver a sacar la foto el mismo dia la reemplaza', function (): voi
     esIgual('1', (string) $cuantas, 'y una sola foto de ese día');
 });
 
-prueba('[db] la foto anterior se busca hacia atras, nunca hacia adelante', function (): void {
-    // Comparar el 15 de septiembre contra el 20 de agosto es un mes;
-    // contra el 10 de septiembre no es nada, y daría una variación
-    // mensual falsa.
+prueba('[db] la foto de comparacion es la ultima del mes anterior', function (): void {
+    // Con el corte en "hace treinta días" esto fallaba: la foto del 20
+    // de agosto queda fuera de la ventana del 15 de septiembre, y el
+    // bot habría dicho "es la primera foto" teniendo una de agosto.
     TestDatabase::limpiar();
     $repo = new PatrimonioRepository(TestDatabase::pdo());
     $ana = nuevoUsuario();
@@ -103,13 +103,24 @@ prueba('[db] la foto anterior se busca hacia atras, nunca hacia adelante', funct
     $repo->guardar($ana, new DateTimeImmutable('2026-09-10'), posicionesDeMuestra());
     $repo->guardar($ana, new DateTimeImmutable('2026-09-15'), posicionesDeMuestra());
 
-    $previa = $repo->anteriorA($ana, new DateTimeImmutable('2026-08-15'));
+    $previa = $repo->delMesAnterior($ana, new DateTimeImmutable('2026-09-15'));
 
-    esNulo($previa, 'no hay ninguna anterior al 15 de agosto');
-
-    $previa = $repo->anteriorA($ana, (new DateTimeImmutable('2026-09-15'))->modify('-1 month'));
     noEsNulo($previa);
-    esIgual('2026-08-20', $previa['fecha']->format('Y-m-d'), 'la de agosto, no la del 10 de septiembre');
+    esIgual(
+        '2026-08-20',
+        $previa['fecha']->format('Y-m-d'),
+        'la de agosto, no la del 10 de septiembre: ésa es del mismo mes'
+    );
+});
+
+prueba('[db] con una sola foto no hay mes anterior que buscar', function (): void {
+    TestDatabase::limpiar();
+    $repo = new PatrimonioRepository(TestDatabase::pdo());
+    $ana = nuevoUsuario();
+
+    $repo->guardar($ana, new DateTimeImmutable('2026-09-15'), posicionesDeMuestra());
+
+    esNulo($repo->delMesAnterior($ana, new DateTimeImmutable('2026-09-15')));
 });
 
 prueba('[db] las fotos no cruzan usuarios', function (): void {

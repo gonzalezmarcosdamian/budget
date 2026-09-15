@@ -489,7 +489,7 @@ final class Reports
             $lineas[] = 'Total: <b>' . ExpenseCard::escapar($actual['total']->formatear()) . '</b>';
         }
 
-        $previo = $this->patrimonio->anteriorA($userId, $actual['fecha']->modify('-1 month'));
+        $previo = $this->patrimonio->delMesAnterior($userId, $actual['fecha']);
 
         if ($previo === null) {
             $lineas[] = '';
