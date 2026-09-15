@@ -153,7 +153,7 @@ final class PatrimonioRepository
                 'origen' => (string) $p['origen'],
                 'clase' => (string) $p['clase'],
                 'cantidad' => (float) $p['cantidad'],
-                'precio' => (float) $p['precio'],
+                'precio' => (float) $p['precio_ars'],
                 'valor' => Money::deDecimal((string) $p['valor_ars']),
             ];
         }
