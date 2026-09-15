@@ -569,22 +569,37 @@ final class ExpenseRepository
     /**
      * Lo que realmente se gastó: el neto con cada persona, más comercios.
      *
-     *     gasto real = SUMA de max(0, enviado - recibido) + comercios
+     *     gasto real = SUMA por contraparte + comercios
      *
-     * El piso en cero por contraparte es lo que separa una devolución de
-     * un ingreso. A quien le mandaste $100.000 y te devolvió $70.000, te
-     * costó $30.000. A quien te paga $120.000 todos los meses y nunca le
-     * mandaste nada, el máximo lo deja en cero: su plata es un ingreso,
-     * no un descuento sobre lo que gastaste en otra cosa.
+     * Y la suma por contraparte depende de una cosa que **no se puede
+     * deducir del movimiento**: si lo que entró es una devolución o un
+     * cobro. Para la base son idénticos, plata que entra de alguien.
+     *
+     * El primer criterio fue "¿también le mandaste?", con piso en cero:
+     * a quien le mandaste $100.000 y te devolvió $70.000 te costó
+     * $30.000, y a quien te paga todos los meses sin que le mandes nada
+     * el piso lo deja en cero, así su plata no descuenta gasto.
+     *
+     * Falla en un caso real: una amiga que te devuelve su parte de
+     * varias cenas que pagaste **vos en el restaurante**. Nunca recibió
+     * una transferencia tuya, así que el piso deja su devolución en cero
+     * y esas cenas quedan contadas enteras.
+     *
+     * Por eso `contrapartes.reintegra`: marcada, su plata entrante resta
+     * de verdad, aunque el enviado sea cero. Sin marcar, sigue el piso.
      *
      * @return int centavos
      */
     private function gastoRealEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): int
     {
         $sentencia = $this->pdo->prepare(
-            "SELECT COALESCE(SUM(GREATEST(t.enviado - t.recibido, 0)), 0) AS neto
+            "SELECT COALESCE(SUM(
+                        CASE WHEN t.reintegra = 1
+                             THEN t.enviado - t.recibido
+                             ELSE GREATEST(t.enviado - t.recibido, 0) END), 0) AS neto
                FROM (
                  SELECT e.contraparte,
+                        MAX(COALESCE(cp.reintegra, 0)) AS reintegra,
                         SUM(CASE WHEN e.tipo = :gasto THEN e.monto_ars ELSE 0 END) AS enviado,
                         SUM(CASE WHEN e.tipo = :ingreso THEN e.monto_ars ELSE 0 END) AS recibido
                    FROM expenses e

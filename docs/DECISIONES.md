@@ -700,3 +700,34 @@ una agregación por contraparte, con su subconsulta. Vale el costo: es la
 diferencia entre un número que se parece a la realidad y uno que no. La lección
 general, que ya apareció en el ADR 27 con otra cara: **antes de restar dos
 totales, preguntarse si las dos puntas son la misma clase de cosa.**
+
+---
+
+## 31. Si una devolución es devolución, hay que poder decirlo
+
+**Contexto.** El ADR 30 resolvió el neto por contraparte con piso en cero, usando
+*"¿también le mandaste?"* para adivinar si lo que entra es una devolución o un
+cobro. Duró un caso: una amiga que devuelve su parte de varias cenas que el
+usuario pagó **en el restaurante**. Nunca recibió una transferencia suya, así que
+el piso deja su devolución en cero y esas cenas quedan contadas enteras.
+
+Es la tercera vez que el mismo hecho muerde: **para la base, un cobro y una
+devolución son idénticos**. No hay nada en el movimiento que los distinga. Cada
+intento de deducirlo acertó en los casos que tenía a la vista y falló en el
+siguiente.
+
+**Decisión.** Dejar de adivinar donde no se puede: `contrapartes.reintegra` marca
+a quien te devuelve plata de algo que pagaste vos. Marcada, lo que entra resta de
+verdad aunque el enviado sea cero. Sin marcar, sigue el piso en cero, que resuelve
+solo el caso frecuente —dos personas que se mandan plata en las dos direcciones—
+sin pedirle nada al usuario.
+
+El default es "no descuenta" porque equivocarse hacia el gasto alto se nota, y
+hacia el bajo lo esconde.
+
+**Consecuencias.** Tres marcas conviven en `contrapartes`, y cada una responde una
+pregunta distinta que la API no puede contestar: `es_propia` (¿es una cuenta
+mía?), `reintegra` (¿lo que me manda es devolución?) y `alias` (¿quién es?). La
+lección, ya con tres casos encima: **cuando dos cosas opuestas llegan idénticas,
+no hay heurística que las separe — hay que preguntar una vez y guardarlo.** Ver
+[[no-modelar-lo-que-se-puede-preguntar]].

@@ -483,3 +483,63 @@ prueba('[db] la cola no cruza usuarios ni toma ingresos', function (): void {
     contiene($reportes->aCategorizar($beto), 'No queda nada sin clasificar');
     contiene($reportes->aCategorizar($ana), 'Quedan <b>1</b> sin clasificar');
 });
+
+prueba('[db] una amiga que devuelve su parte si descuenta, aunque no le hayas transferido', function (): void {
+    // Caso real: pagaste la cena en el restaurante y ella te devolvió su
+    // parte. Nunca recibió una transferencia tuya, así que el piso en
+    // cero dejaba su devolución sin efecto y la cena quedaba contada
+    // entera. No hay nada en el movimiento que diga si eso es una
+    // devolución o un cobro: se declara en la contraparte.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 100_000, 'Restaurante', '2026-09-05');
+
+    $devuelto = gastoConfirmado($ana, 60_000, 'Cami', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '252300561' WHERE id = {$devuelto}");
+
+    contiene(
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
+        'Gasto real: $100.000</b>',
+        'sin marcar, la devolución no descuenta'
+    );
+
+    $pdo->prepare(
+        'INSERT INTO contrapartes (user_id, externo, alias, reintegra) VALUES (?, ?, ?, 1)'
+    )->execute([$ana, '252300561', 'Cami']);
+
+    contiene(
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
+        'Gasto real: $40.000</b>',
+        'marcada como reintegro, la cena costó lo que quedó'
+    );
+});
+
+prueba('[db] marcar reintegro no convierte un cobro en descuento de otro', function (): void {
+    // El canon del laboratorio no está marcado, así que sigue sin
+    // descontar: las dos reglas conviven.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 500_000, 'Super', '2026-09-05');
+
+    $canon = gastoConfirmado($ana, 120_000, 'Laboratorio', '2026-09-10', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '2825076' WHERE id = {$canon}");
+
+    $devuelto = gastoConfirmado($ana, 60_000, 'Cami', '2026-09-11', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '252300561' WHERE id = {$devuelto}");
+
+    $pdo->prepare(
+        'INSERT INTO contrapartes (user_id, externo, alias, reintegra) VALUES (?, ?, ?, 1)'
+    )->execute([$ana, '252300561', 'Cami']);
+
+    contiene(
+        $reportes->flujo($ana, new DateTimeImmutable('2026-09-14')),
+        'Gasto real: $440.000</b>',
+        'resta los 60.000 de Cami, no los 120.000 del canon'
+    );
+});
