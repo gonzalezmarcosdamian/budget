@@ -15,4 +15,4 @@
 -- el aviso la función no existe.
 
 ALTER TABLE users
-    ADD COLUMN avisos TINYINT(1) NOT NULL DEFAULT 0 AFTER moneda;
+    ADD COLUMN avisos TINYINT(1) NOT NULL DEFAULT 0 AFTER estado;
