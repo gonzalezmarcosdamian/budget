@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Budget\Handler;
+namespace Budget\Reporte;
 
 use Budget\Expense\Draft;
 use Budget\Expense\Periodo;
+use Budget\Handler\ExpenseCard;
 use Budget\Repository\ExpenseRepository;
 use Budget\Support\Money;
 use DateTimeImmutable;

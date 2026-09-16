@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Budget\Handler;
+namespace Budget\Reporte;
 
 use Budget\Expense\Draft;
 use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
+use Budget\Handler\ExpenseCard;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Repository\PatrimonioRepository;

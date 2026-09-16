@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Budget\Handler;
+namespace Budget\Reporte;
 
+use Budget\Handler\ExpenseCard;
 use Budget\Repository\PatrimonioRepository;
 use Budget\Support\Money;
 use DateTimeImmutable;

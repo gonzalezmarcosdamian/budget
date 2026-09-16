@@ -28,9 +28,22 @@ gratuitas de varios proveedores de IA.
 Entiende la jerga: `luca` = mil, `palo` = millón, `25k` = 25.000. Y el formato
 argentino de importes: `18.450,75`.
 
-Comandos: `/hoy`, `/mes`, `/anio`, `/flujo`, `/ultimos`, `/recurrentes`,
-`/ayuda`. La lista canónica vive en `Budget\Telegram\Menu` y se publica con
-`php bin/comandos.php`.
+**Qué te contesta**
+
+| | |
+|---|---|
+| `/hoy` `/mes` `/trimestre` `/anio` | el período, con promedio y proyección |
+| `/flujo` | flujo de caja: qué entró, qué salió, y el gasto real neteado |
+| `/topgastos` | los movimientos más caros |
+| `/topentrantes` `/topsalientes` | quién movió más plata con vos |
+| `/inversiones` | la cartera, y cuánto rindió contra el mes pasado |
+| `/ultimos` `/recurrentes` | los últimos movimientos, y lo que se repite |
+| `/revisar` | clasificar lo que quedó sin categoría |
+| `/mercadopago` `/desvincular` `/avisos` | conectar la cuenta y el silencio |
+
+La lista canónica vive en `Budget\Telegram\Menu` y se publica con
+`php bin/comandos.php`. Dos tests verifican que el menú y lo que el bot atiende
+sean el mismo conjunto, en las dos direcciones.
 
 ## Estado
 
@@ -40,6 +53,13 @@ botones, categorías que se aprenden de tus correcciones, importación de resúm
 de tarjeta en PDF, sincronización con Mercado Pago, taxonomía completa
 (gasto/ingreso/inversión × fijo/variable), transferencias neteadas por persona,
 recordatorios de gastos recurrentes y respuestas a preguntas en lenguaje natural.
+
+**Cómo se sostiene.** Cuatro guards que tokenizan `src/` y corren en
+milisegundos: toda clase instanciada existe, todo método llamado existe (también
+`$this->fabrica()->metodo()`, que es como se delega acá), el menú de Telegram y
+lo que el bot atiende coinciden, y ninguna tabla nueva se olvida de la limpieza
+entre tests. Más `bin/humo.php`, que renderiza todo lo que el bot contesta contra
+los datos reales: verde en CI no significa que el usuario lo vea.
 
 Pendiente: presupuestos con alerta, sincronización automática de IOL, ingesta de
 mails del banco. Ver [docs/DECISIONES.md](docs/DECISIONES.md) y el plan técnico.

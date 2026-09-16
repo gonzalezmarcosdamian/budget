@@ -27,18 +27,28 @@ gratuitas de varios proveedores de IA.
 public/webhook.php   punto de entrada: valida secreto -> reserva update_id
                      -> responde 200 -> recién ahí procesa
 src/App.php          cableado (sin contenedor de DI, el grafo entra en una pantalla)
-src/Telegram/        cliente de la Bot API, parseo de updates, teclados
-src/Expense/         FastParser (regex, costo cero), Draft, CategoryGuesser
+src/Telegram/        cliente de la Bot API, parseo de updates, teclados, menú
+src/Expense/         FastParser (regex, costo cero), Draft, CategoryGuesser,
+                     Pregunta, Mes, Periodo
 src/Ai/              LlmProvider + Router con cadena de respaldo + proveedores
 src/Repository/      acceso a datos, filtrado por user_id
-src/Handler/         Dispatcher, ExpenseCard, Reports
-src/Support/         Money, Env, Config, Clock, Http, Logger, Background
+src/Handler/         lo que pasa cuando llega un mensaje: Dispatcher enruta,
+                     Tarjetas/Lotes/Recordatorios atienden los botones,
+                     MercadoPagoWizard conecta la cuenta
+src/Reporte/         lo que el bot contesta: Reports, Rankings, CarteraCard,
+                     y la matemática pura detrás (Metricas, Patrimonio)
+src/Integracion/     Mercado Pago
+src/Support/         Money, Env, Config, Clock, Http, Logger, Cifrado
 migrations/          .sql numerados, aplicados por bin/migrate.php
 ```
 
 El orden de `webhook.php` no es casual: validar y deduplicar van **antes** del
 200 para que un fallo de base provoque un reintento de Telegram en vez de perder
 el gasto en silencio.
+
+El corte entre `Handler/` y `Reporte/` tampoco: `Reporte/` no sabe nada de
+Telegram más allá de devolver texto, y por eso se puede probar entero sin red.
+`Handler/` es lo único que manda mensajes.
 
 ## Comandos
 
@@ -59,7 +69,7 @@ Puertos ocupados: `DB_HOST_PORT=3320 APP_HOST_PORT=8090 docker compose up -d`.
 
 ## Antes de dar algo por terminado
 
-- [ ] `php tests/run.php --unit` en verde
+- [ ] `php tests/run.php --unit` en verde (incluye los guards de clases y métodos)
 - [ ] `docker compose exec app php tests/run.php` en verde (incluye integración)
 - [ ] Lint sin errores en PHP 8.2 **y** 8.4
 - [ ] Funciones < 50 líneas, archivos < 800

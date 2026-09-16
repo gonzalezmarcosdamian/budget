@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use Budget\Expense\Draft;
 use Budget\Expense\Periodo;
-use Budget\Handler\Rankings;
-use Budget\Handler\Reports;
+use Budget\Reporte\Rankings;
+use Budget\Reporte\Reports;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Repository\PatrimonioRepository;

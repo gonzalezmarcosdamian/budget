@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Budget\Handler\Patrimonio;
+use Budget\Reporte\Patrimonio;
 use Budget\Support\Money;
 
 /**

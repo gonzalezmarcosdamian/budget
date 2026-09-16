@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Budget\Handler\Metricas;
+use Budget\Reporte\Metricas;
 use Budget\Support\Money;
 
 function pesos(int $monto): Money

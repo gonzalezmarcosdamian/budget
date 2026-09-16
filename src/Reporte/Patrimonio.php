@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Budget\Handler;
+namespace Budget\Reporte;
 
 use Budget\Support\Money;
 
