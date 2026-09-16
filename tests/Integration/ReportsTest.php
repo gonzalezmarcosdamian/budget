@@ -173,54 +173,87 @@ prueba('[db] sin ningún movimiento el flujo no inventa nada', function (): void
     );
 });
 
-prueba('[db] /anio muestra mes a mes y no se cuela el año anterior', function (): void {
+prueba('[db] el año son los ultimos doce meses, mes a mes', function (): void {
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
 
     gastoConfirmado($ana, 111_111, 'Enero', '2026-01-15');
     gastoConfirmado($ana, 222_222, 'Marzo', '2026-03-15');
-    gastoConfirmado($ana, 999_999, 'Diciembre pasado', '2025-12-15');
+    gastoConfirmado($ana, 999_999, 'Hace mas de un año', '2025-06-15');
 
-    $texto = $reportes->delAnio($ana, new DateTimeImmutable('2026-09-14'));
+    $texto = $reportes->delPeriodo(
+        $ana,
+        Periodo::desde(Periodo::ANIO, new DateTimeImmutable('2026-09-14'))
+    );
 
-    contiene($texto, 'Enero', 'aparece el mes con gastos');
+    contiene($texto, 'Enero 2026', 'aparece el mes con gastos');
     contiene($texto, '111.111', 'con su total');
-    contiene($texto, 'Marzo');
-    afirmar(!str_contains($texto, 'Febrero'), 'un mes sin gastos no ocupa una línea');
-    afirmar(!str_contains($texto, '999.999'), 'el año anterior no entra');
-    contiene($texto, '333.333', 'el total es la suma del año en curso');
+    contiene($texto, 'Marzo 2026');
+    contiene($texto, '333.333', 'el total es la suma de la ventana');
+    afirmar(!str_contains($texto, '999.999'), 'lo anterior a la ventana queda afuera');
 });
 
-prueba('[db] /anio no corta los meses que todavía no llegaron', function (): void {
+prueba('[db] los meses sin gastos se muestran en cero, no desaparecen', function (): void {
+    // Si julio y septiembre tienen $300.000 cada uno y agosto no
+    // aparece, el promedio de $200.000 se lee como un error del bot.
     TestDatabase::limpiar();
     $reportes = reportes();
     $ana = nuevoUsuario();
 
-    // Un gasto futuro dentro del mes en curso: el corte es por mes, no
-    // por día, así que tiene que entrar.
+    gastoConfirmado($ana, 300_000, 'Julio', '2026-07-15');
+    gastoConfirmado($ana, 300_000, 'Septiembre', '2026-09-15');
+
+    $texto = $reportes->delPeriodo(
+        $ana,
+        Periodo::desde(Periodo::TRIMESTRE, new DateTimeImmutable('2026-09-20'))
+    );
+
+    contiene($texto, 'Agosto 2026 — <b>$0</b>', 'el mes vacío se ve, y explica el promedio');
+    contiene($texto, 'Promedio: <b>$200.000</b>', 'sobre los tres meses del período');
+});
+
+prueba('[db] el mes en curso se cuenta entero, aunque falten dias', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
     gastoConfirmado($ana, 50_000, 'Fin de mes', '2026-09-30');
 
     contiene(
-        $reportes->delAnio($ana, new DateTimeImmutable('2026-09-14')),
+        $reportes->delPeriodo($ana, Periodo::desde(Periodo::TRIMESTRE, new DateTimeImmutable('2026-09-14'))),
         '50.000',
-        'el mes en curso se cuenta entero'
+        'el corte es por mes, no por día'
     );
 });
 
 prueba('[db] los reportes no cruzan usuarios', function (): void {
+    // Regla 3 del proyecto. Cubre los cuatro caminos nuevos, que hasta
+    // ahora no tenían ninguna prueba de aislamiento.
     TestDatabase::limpiar();
+    $pdo = TestDatabase::pdo();
     $reportes = reportes();
+    $rankings = new Rankings(new ExpenseRepository($pdo));
     $ana = nuevoUsuario('Ana');
     $beto = nuevoUsuario('Beto');
 
     gastoConfirmado($ana, 777_777, 'Sueldo de Ana', '2026-09-05', Draft::TIPO_INGRESO);
-    gastoConfirmado($ana, 444_444, 'Gasto de Ana', '2026-09-05');
+    $gasto = gastoConfirmado($ana, 444_444, 'Gasto de Ana', '2026-09-05');
+    $pdo->exec("UPDATE expenses SET contraparte = '900000099' WHERE id = {$gasto}");
 
     $hoy = new DateTimeImmutable('2026-09-14');
+    $mes = Periodo::desde(Periodo::MES, $hoy);
 
-    afirmar(!str_contains($reportes->flujo($beto, $hoy), '777.777'), 'Beto no ve los ingresos de Ana');
-    afirmar(!str_contains($reportes->delAnio($beto, $hoy), '444.444'), 'ni sus gastos');
+    afirmar(!str_contains($reportes->flujo($beto, $hoy), '777.777'), 'el flujo no cruza');
+    afirmar(
+        !str_contains($reportes->delPeriodo($beto, Periodo::desde(Periodo::ANIO, $hoy)), '444.444'),
+        'el período no cruza'
+    );
+    afirmar(!str_contains($rankings->topGastos($beto, $mes), '444.444'), 'el top de gastos no cruza');
+    afirmar(
+        !str_contains($rankings->topSalientes($beto, $mes), '444.444'),
+        'el top de transferencias no cruza'
+    );
 });
 
 prueba('[db] /recurrentes lista lo que se repite, con o sin categoría', function (): void {
