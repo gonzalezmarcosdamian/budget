@@ -139,12 +139,13 @@ foreach ($preguntas as $texto) {
 // El menú que Telegram publica tiene que coincidir con lo que se probó.
 $publicados = array_map(static fn (string $c): string => '/' . $c, array_keys(Menu::COMANDOS));
 $probados = array_keys($comandos);
-// /mercadopago y /avisos no rinden texto de reporte: uno son
-// instrucciones fijas y el otro escribe una preferencia.
+// Estos cuatro no rinden texto de reporte: dos son instrucciones fijas
+// y dos escriben estado, así que una prueba de solo lectura no los
+// puede ejecutar sin efectos.
 $sinProbar = array_values(array_diff(
     $publicados,
     $probados,
-    ['/ayuda', '/mercadopago', '/avisos']
+    ['/ayuda', '/mercadopago', '/avisos', '/desvincular']
 ));
 
 echo "\n" . str_repeat('=', 66) . "\n";
