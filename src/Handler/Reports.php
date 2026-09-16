@@ -92,7 +92,7 @@ final class Reports
         foreach (array_slice($this->gastos->totalPorCategoria($userId, $desde, $hasta), 0, 5) as $r) {
             $lineas[] = sprintf(
                 '%s %s — <b>%s</b>  <i>%d%%</i>',
-                $r['emoji'],
+                ExpenseCard::escapar((string) $r['emoji']),
                 ExpenseCard::escapar($r['categoria']),
                 ExpenseCard::escapar($r['total']->formatear()),
                 $r['total']->porcentajeDe($total)
@@ -578,7 +578,7 @@ final class Reports
         foreach (array_slice($this->gastos->totalPorCategoria($userId, $p->desde, $p->hasta), 0, 8) as $r) {
             $lineas[] = sprintf(
                 '%s %s — <b>%s</b>  <i>%d%%</i>',
-                $r['emoji'],
+                ExpenseCard::escapar((string) $r['emoji']),
                 ExpenseCard::escapar($r['categoria']),
                 ExpenseCard::escapar($r['total']->formatear()),
                 $r['total']->porcentajeDe($total)
@@ -609,7 +609,7 @@ final class Reports
 
             $lineas[] = sprintf(
                 '%s  %s  %s — <b>%s%s</b>',
-                (string) $fila['emoji'],
+                ExpenseCard::escapar((string) $fila['emoji']),
                 self::soloDiaYMes((string) $fila['fecha']),
                 ExpenseCard::escapar($comercio !== '' ? $comercio : 'Movimiento'),
                 $entra ? '+' : '−',

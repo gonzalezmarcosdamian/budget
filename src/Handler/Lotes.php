@@ -8,7 +8,6 @@ use Budget\Repository\ExpenseRepository;
 use Budget\Support\Money;
 use Budget\Telegram\Client;
 use Budget\Telegram\Update;
-use DateTimeImmutable;
 
 /**
  * Los botones de una importación en lote.
@@ -87,7 +86,7 @@ final class Lotes
 
             $lineas[] = sprintf(
                 '%s  %s  %s — <b>%s</b>',
-                (string) $fila['emoji'],
+                ExpenseCard::escapar((string) $fila['emoji']),
                 self::soloDiaYMes((string) $fila['fecha']),
                 ExpenseCard::escapar($comercio !== '' ? $comercio : 'Consumo'),
                 ExpenseCard::escapar($monto->formatear())

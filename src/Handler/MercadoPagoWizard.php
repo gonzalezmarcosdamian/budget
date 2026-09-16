@@ -33,7 +33,9 @@ final class MercadoPagoWizard
     public function __construct(
         private readonly Client $telegram,
         private readonly PDO $pdo,
-        private readonly string $claveHex,
+        /** Como cierre y no como valor: leer APP_KEY revienta si falta,
+         *  y /desvincular no la necesita para contestar. */
+        private readonly \Closure $claveHex,
         private readonly Logger $log,
     ) {
     }
@@ -141,7 +143,7 @@ final class MercadoPagoWizard
                 $userId,
                 $mpUserId,
                 $apodo,
-                Cifrado::conClaveHex($this->claveHex)->cifrar($token)
+                Cifrado::conClaveHex(($this->claveHex)())->cifrar($token)
             );
         } catch (Throwable $e) {
             $this->log->excepcion($e, 'guardado del token de Mercado Pago');

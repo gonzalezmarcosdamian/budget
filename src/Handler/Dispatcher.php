@@ -516,9 +516,34 @@ final class Dispatcher
         };
     }
 
+    private static function noEntendi(): string
+    {
+        return implode("\n", [
+            'No pude sacar un gasto de ahí. Probá con alguna de estas:',
+            '',
+            '• <code>1200 super</code> — un gasto',
+            '• <code>cuánto gasté en súper este mes</code> — una pregunta',
+            '• Una foto del ticket, un audio o el PDF del resumen',
+            '• /mes para el resumen completo',
+        ]);
+    }
+
+    /**
+     * Manda el próximo movimiento sin clasificar, con los botones.
+     *
+     * Devuelve cadena vacía cuando ya mandó el mensaje él mismo: el
+     * teclado no entra por el camino normal de respuesta.
+     */
+
     private function tarjetas(): Tarjetas
     {
-        return new Tarjetas($this->telegram, $this->gastos, $this->categorias, $this->reportes);
+        return new Tarjetas(
+            $this->telegram,
+            $this->gastos,
+            $this->categorias,
+            $this->reportes,
+            $this->reloj
+        );
     }
 
     private function recordatorios(): Recordatorios
@@ -542,7 +567,7 @@ final class Dispatcher
         return new MercadoPagoWizard(
             $this->telegram,
             $this->gastos->pdo(),
-            $this->config->claveDeCifrado(),
+            fn (): string => $this->config->claveDeCifrado(),
             $this->log
         );
     }

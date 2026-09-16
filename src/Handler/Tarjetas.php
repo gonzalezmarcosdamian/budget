@@ -6,6 +6,7 @@ namespace Budget\Handler;
 
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
+use Budget\Support\Clock;
 use Budget\Support\Money;
 use Budget\Telegram\Client;
 use Budget\Telegram\Update;
@@ -27,6 +28,7 @@ final class Tarjetas
         private readonly ExpenseRepository $gastos,
         private readonly CategoryRepository $categorias,
         private readonly Reports $reportes,
+        private readonly Clock $reloj,
     ) {
     }
 
@@ -162,24 +164,6 @@ final class Tarjetas
      * "No encontré un importe" es un callejón sin salida: no dice qué
      * más se puede hacer. Si el bot no entendió, al menos que muestre
      * las salidas.
-     */
-    private static function noEntendi(): string
-    {
-        return implode("\n", [
-            'No pude sacar un gasto de ahí. Probá con alguna de estas:',
-            '',
-            '• <code>1200 super</code> — un gasto',
-            '• <code>cuánto gasté en súper este mes</code> — una pregunta',
-            '• Una foto del ticket, un audio o el PDF del resumen',
-            '• /mes para el resumen completo',
-        ]);
-    }
-
-    /**
-     * Manda el próximo movimiento sin clasificar, con los botones.
-     *
-     * Devuelve cadena vacía cuando ya mandó el mensaje él mismo: el
-     * teclado no entra por el camino normal de respuesta.
      */
     public function revisar(int $userId, int $chatId): string
     {
