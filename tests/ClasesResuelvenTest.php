@@ -148,3 +148,74 @@ prueba('toda clase instanciada en src/ resuelve a una clase que existe', functio
 
     afirmar($revisadas > 20, "sólo se revisaron {$revisadas} clases: el analizador no está leyendo nada");
 });
+
+prueba('todo tipo declarado en una firma resuelve a una clase que existe', function (): void {
+    // El hueco por el que se coló una rotura real: mover clases entre
+    // namespaces deja los type hints sin calificar apuntando al
+    // namespace viejo. `php -l` no lo ve porque es sintaxis válida, y
+    // sólo revienta al construir el objeto — o sea, en producción.
+    $revisados = 0;
+    $archivos = array_merge(
+        glob(__DIR__ . '/../src/**/*.php') ?: [],
+        glob(__DIR__ . '/../src/*.php') ?: []
+    );
+
+    foreach ($archivos as $archivo) {
+        $codigo = (string) file_get_contents($archivo);
+
+        if (preg_match('/^namespace\s+([^;]+);/m', $codigo, $ns) !== 1) {
+            continue;
+        }
+
+        if (preg_match('/^(?:final\s+|abstract\s+)?class\s+(\w+)/m', $codigo, $c) !== 1) {
+            continue;
+        }
+
+        $clase = trim($ns[1]) . '\\' . $c[1];
+
+        if (!class_exists($clase)) {
+            continue;
+        }
+
+        $reflexion = new ReflectionClass($clase);
+
+        foreach ($reflexion->getMethods() as $metodo) {
+            if ($metodo->getDeclaringClass()->getName() !== $clase) {
+                continue;
+            }
+
+            $tipos = [];
+
+            foreach ($metodo->getParameters() as $p) {
+                $tipos[] = $p->getType();
+            }
+
+            $tipos[] = $metodo->getReturnType();
+
+            foreach ($tipos as $tipo) {
+                if (!$tipo instanceof ReflectionNamedType || $tipo->isBuiltin()) {
+                    continue;
+                }
+
+                $nombre = $tipo->getName();
+
+                if (!str_starts_with($nombre, 'Budget\\')) {
+                    continue;
+                }
+
+                $revisados++;
+                afirmar(
+                    class_exists($nombre) || interface_exists($nombre),
+                    sprintf(
+                        '%s::%s() declara %s, que no existe con ese nombre',
+                        $reflexion->getShortName(),
+                        $metodo->getName(),
+                        $nombre
+                    )
+                );
+            }
+        }
+    }
+
+    afirmar($revisados > 30, "sólo se revisaron {$revisados} tipos: el analizador no está leyendo nada");
+});

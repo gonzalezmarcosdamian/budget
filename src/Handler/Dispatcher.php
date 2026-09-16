@@ -11,6 +11,8 @@ use Budget\Expense\Draft;
 use Budget\Expense\FastParser;
 use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
+use Budget\Reporte\Rankings;
+use Budget\Reporte\Reports;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Repository\RecurringRepository;

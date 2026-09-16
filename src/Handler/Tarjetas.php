@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Budget\Handler;
 
+use Budget\Reporte\Reports;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Support\Clock;
