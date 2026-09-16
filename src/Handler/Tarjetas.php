@@ -9,6 +9,7 @@ use Budget\Repository\ExpenseRepository;
 use Budget\Support\Clock;
 use Budget\Support\Money;
 use Budget\Telegram\Client;
+use Budget\Telegram\Keyboard;
 use Budget\Telegram\Update;
 
 /**
@@ -175,7 +176,17 @@ final class Tarjetas
      * más se puede hacer. Si el bot no entendió, al menos que muestre
      * las salidas.
      */
-    public function revisar(int $userId, int $chatId): string
+    /**
+     * Qué mandar para el próximo pendiente, sin mandarlo.
+     *
+     * Separado del envío para que se pueda mirar sin efectos: la prueba
+     * de humo ejerce esta parte, que es donde está toda la lógica —qué
+     * movimiento toca, qué categorías se ofrecen— mientras que mandarlo
+     * es una línea sin decisiones.
+     *
+     * @return array{texto:string, teclado:?Keyboard}
+     */
+    public function siguientePendiente(int $userId): array
     {
         // Una sola consulta y no dos: con dos, el texto podía describir
         // un movimiento y los botones llevar el id de otro —hay empates
@@ -185,13 +196,12 @@ final class Tarjetas
         $texto = $this->reportes->aCategorizar($userId, $siguiente);
 
         if ($siguiente === null) {
-            return $texto;
+            return ['texto' => $texto, 'teclado' => null];
         }
 
-        $this->telegram->enviarMensaje(
-            $chatId,
-            $texto,
-            ExpenseCard::tecladoDeCategorias(
+        return [
+            'texto' => $texto,
+            'teclado' => ExpenseCard::tecladoDeCategorias(
                 (int) $siguiente['id'],
                 // Sin sacar "Otros" el comando entra en bucle: es la
                 // categoría que define la cola, así que elegirla deja
@@ -201,8 +211,20 @@ final class Tarjetas
                     static fn (array $c): bool
                         => $c['nombre'] !== ExpenseRepository::CATEGORIA_OTROS
                 ))
-            )
-        );
+            ),
+        ];
+    }
+
+    /** Devuelve texto cuando no hay teclado que mandar; si no, manda y devuelve ''. */
+    public function revisar(int $userId, int $chatId): string
+    {
+        $siguiente = $this->siguientePendiente($userId);
+
+        if ($siguiente['teclado'] === null) {
+            return $siguiente['texto'];
+        }
+
+        $this->telegram->enviarMensaje($chatId, $siguiente['texto'], $siguiente['teclado']);
 
         return '';
     }

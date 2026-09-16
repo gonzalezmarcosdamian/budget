@@ -105,7 +105,7 @@ $comandos = [
         new CategoryRepository($pdo),
         $reportes,
         $app->reloj
-    ))->revisar($userId, 0),
+    ))->siguientePendiente($userId)['texto'],
 ];
 
 $preguntas = [
