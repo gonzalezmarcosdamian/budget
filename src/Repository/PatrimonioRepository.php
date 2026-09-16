@@ -63,13 +63,15 @@ final class PatrimonioRepository
         $this->pdo->beginTransaction();
 
         try {
-            $this->pdo
-                ->prepare('DELETE FROM patrimonio_snapshot WHERE user_id = ? AND fecha = ?')
-                ->execute([$userId, $fecha->format('Y-m-d')]);
-
+            // Upsert y no DELETE + INSERT: el borrado por rango toma un
+            // gap lock sobre el hueco del índice único, y dos tomas
+            // simultáneas de la misma foto terminaban en deadlock. Con
+            // esto la fila se pisa sin bloquear el hueco.
             $alta = $this->pdo->prepare(
                 'INSERT INTO patrimonio_snapshot (user_id, fecha, total_ars, fuente)
-                 VALUES (?, ?, ?, ?)'
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    id = LAST_INSERT_ID(id), total_ars = VALUES(total_ars), fuente = VALUES(fuente)'
             );
             $alta->execute([
                 $userId,
@@ -78,6 +80,12 @@ final class PatrimonioRepository
                 $fuente,
             ]);
             $snapshotId = (int) $this->pdo->lastInsertId();
+
+            // Las posiciones sí se borran, pero por snapshot_id, que es
+            // una igualdad y no un rango.
+            $this->pdo
+                ->prepare('DELETE FROM patrimonio_posicion WHERE snapshot_id = ?')
+                ->execute([$snapshotId]);
 
             $posicion = $this->pdo->prepare(
                 'INSERT INTO patrimonio_posicion

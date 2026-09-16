@@ -48,6 +48,7 @@ php bin/cron.php                  # purga + chequeo de salud del webhook
 php bin/doctor.php                # diagnóstico del entorno, con remedios
 php bin/comandos.php              # publica el menú de comandos en Telegram
 php bin/humo.php                  # renderiza todo lo que el bot contesta, con datos reales
+php bin/muertos.php               # métodos de src/ que ya no llama nadie
 docker compose up -d --build      # entorno de pre-producción
 docker compose exec app php bin/migrate.php
 docker compose exec app php tests/run.php   # unitarios + integración

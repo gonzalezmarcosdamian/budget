@@ -99,12 +99,6 @@ final class Money
         return new self($this->centavos + $otro->centavos, $this->moneda);
     }
 
-    public function esMayorQue(self $otro): bool
-    {
-        $this->exigirMismaMoneda($otro);
-
-        return $this->centavos > $otro->centavos;
-    }
 
     /** Porcentaje que representa este importe sobre otro, 0 si el otro es cero. */
     public function porcentajeDe(self $total): int

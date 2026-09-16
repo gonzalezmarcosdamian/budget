@@ -86,8 +86,18 @@ final class Tarjetas
 
         // Si lo que se corrigió ya estaba confirmado, esto es limpieza
         // de la cola y no la carga de un gasto nuevo: sigue el próximo.
-        if ($yaEstabaConfirmado) {
-            $this->revisar($userId, $update->chatId);
+        if (!$yaEstabaConfirmado) {
+            return;
+        }
+
+        // `revisar` devuelve texto cuando no hay teclado que mandar, que
+        // es justamente el caso de "no queda nada". Descartarlo dejaba
+        // la cola sin cierre: el usuario clasificaba el último y no
+        // pasaba nada.
+        $cierre = $this->revisar($userId, $update->chatId);
+
+        if ($cierre !== '') {
+            $this->telegram->enviarMensaje($update->chatId, $cierre);
         }
     }
 

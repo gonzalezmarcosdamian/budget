@@ -107,15 +107,6 @@ final class RecurringRepository
         ]);
     }
 
-    /** Actualiza el monto esperado cuando el real difiere: el alquiler ajusta. */
-    public function actualizarMonto(int $userId, int $id, Money $monto): void
-    {
-        $sentencia = $this->pdo->prepare(
-            'UPDATE recurring SET monto_esperado = ? WHERE id = ? AND user_id = ?'
-        );
-        $sentencia->execute([$monto->aDecimal(), $id, $userId]);
-    }
-
     /** @return list<array<string,mixed>> */
     public function activos(int $userId): array
     {

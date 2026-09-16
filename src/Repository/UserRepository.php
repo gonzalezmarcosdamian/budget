@@ -81,11 +81,6 @@ final class UserRepository
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function renombrar(int $userId, string $nombre): void
-    {
-        $sentencia = $this->pdo->prepare('UPDATE users SET nombre = ? WHERE id = ?');
-        $sentencia->execute([$nombre, $userId]);
-    }
 
     /**
      * Consume una operación de IA del cupo mensual.

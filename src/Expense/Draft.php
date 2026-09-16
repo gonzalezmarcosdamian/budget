@@ -70,30 +70,10 @@ final class Draft
         return $this->copiarCon(comercio: $comercio);
     }
 
-    public function conMonto(Money $monto): self
-    {
-        return $this->copiarCon(monto: $monto);
-    }
 
-    public function conFecha(DateTimeImmutable $fecha): self
-    {
-        return $this->copiarCon(fecha: $fecha);
-    }
 
-    public function conOrigen(string $fuente, string $modelo = '', ?float $confianza = null): self
-    {
-        return $this->copiarCon(fuente: $fuente, modelo: $modelo, confianza: $confianza);
-    }
 
-    public function conTipo(string $tipo, string $naturaleza): self
-    {
-        return $this->copiarCon(tipo: $tipo, naturaleza: $naturaleza);
-    }
 
-    public function esGasto(): bool
-    {
-        return $this->tipo === self::TIPO_GASTO;
-    }
 
     /** Etiqueta principal de la tarjeta de confirmación. */
     public function titulo(): string

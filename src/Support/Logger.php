@@ -19,12 +19,6 @@ final class Logger
     }
 
     /** @param array<string,scalar|null> $contexto */
-    public function info(string $mensaje, array $contexto = []): void
-    {
-        $this->escribir('INFO', $mensaje, $contexto);
-    }
-
-    /** @param array<string,scalar|null> $contexto */
     public function advertencia(string $mensaje, array $contexto = []): void
     {
         $this->escribir('WARN', $mensaje, $contexto);
