@@ -25,7 +25,7 @@ final class Prompt
         'Alquiler', 'Supermercado', 'Comida y delivery', 'Transporte',
         'Servicios', 'Impuestos', 'Hogar', 'Salud', 'Salidas y fiestas',
         'Entretenimiento', 'Compras', 'Educación', 'Comisiones',
-        'Préstamos y ayuda', 'Otros',
+        'Otros',
         'Sueldo', 'Otros ingresos', 'Inversiones',
     ];
 

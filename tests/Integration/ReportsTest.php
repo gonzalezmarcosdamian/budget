@@ -129,26 +129,19 @@ prueba('[db] mover plata a la cuenta propia no cuenta como gasto real', function
     contiene($texto, 'A cuenta propia: <b>$5.000.000</b>', 'pero se muestran');
 });
 
-prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', function (): void {
-    // El error anterior fue excluirlos porque "no son gastos". Pero la
-    // plata se fue de la cuenta igual: un flujo de caja al que le
-    // sacás movimientos deja de explicar dónde está la plata.
+prueba('[db] el flujo clasifica la salida sin solapes y sin huecos', function (): void {
+    // Los cuatro destinos tienen que sumar exactamente lo que salió: si
+    // se solapan, los porcentajes pasan del 100%; si dejan un hueco, hay
+    // plata que salió y no aparece en ningún lado.
     TestDatabase::limpiar();
     $reportes = reportes();
     $pdo = TestDatabase::pdo();
-    $categorias = new CategoryRepository($pdo);
     $ana = nuevoUsuario();
-
-    $prestamos = $categorias->idPorNombre($ana, ExpenseRepository::CATEGORIA_PRESTAMOS);
-    noEsNulo($prestamos, 'la categoría de préstamos existe en las migraciones');
 
     gastoConfirmado($ana, 200_000, 'Super', '2026-09-06');
 
     $alquiler = gastoConfirmado($ana, 400_000, 'Locador', '2026-09-10');
-    $pdo->exec("UPDATE expenses SET naturaleza = 'fijo', contraparte = '555' WHERE id = {$alquiler}");
-
-    $prestado = gastoConfirmado($ana, 300_000, 'Beto', '2026-09-11');
-    $pdo->exec("UPDATE expenses SET category_id = {$prestamos}, contraparte = '777' WHERE id = {$prestado}");
+    $pdo->exec("UPDATE expenses SET naturaleza = 'fijo', contraparte = '900000031' WHERE id = {$alquiler}");
 
     gastoConfirmado($ana, 100_000, 'CEDEARs', '2026-09-12', Draft::TIPO_INVERSION);
 
@@ -156,9 +149,27 @@ prueba('[db] el flujo no saca los prestamos ni las inversiones: los clasifica', 
 
     contiene($texto, 'Fijos — <b>$400.000</b>', 'el alquiler es fijo, aunque vaya a una persona');
     contiene($texto, 'Consumo — <b>$200.000</b>');
-    contiene($texto, 'Prestado — <b>$300.000</b>', 'el préstamo se muestra aparte, no se borra');
     contiene($texto, 'Invertido — <b>$100.000</b>', 'la inversión también baja la caja');
     contiene($texto, 'A cuenta propia: <b>$100.000</b>', 'comprar CEDEARs es mover plata a lo propio');
+    afirmar(!str_contains($texto, 'Prestado'), 'entre personas hay transferencias, no préstamos');
+});
+
+prueba('[db] una transferencia a alguien no necesita una categoria de prestamo', function (): void {
+    // El neteo por contraparte ya dice lo que hay que saber: lo que le
+    // mandaste menos lo que te devolvió. Llamarlo préstamo agregaba una
+    // afirmación sobre la intención que el bot no puede saber.
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+
+    $mande = gastoConfirmado($ana, 300_000, 'Alguien', '2026-09-11');
+    $volvio = gastoConfirmado($ana, 120_000, 'Alguien', '2026-09-12', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000032' WHERE id IN ({$mande}, {$volvio})");
+
+    $texto = $reportes->flujo($ana, new DateTimeImmutable('2026-09-14'));
+
+    contiene($texto, 'Gasto real: $180.000</b>', 'el neto, que es lo que costó de verdad');
 });
 
 prueba('[db] sin ningún movimiento el flujo no inventa nada', function (): void {

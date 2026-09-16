@@ -71,9 +71,6 @@ final class CategoryGuesser
             'amazon', 'shein', 'regalo', 'perfumeria', 'electronica',
             'celular', 'notebook', 'auricular',
         ],
-        'Préstamos y ayuda' => [
-            'prestamo', 'prestamos', 'preste', 'ayuda', 'devolucion',
-        ],
         'Educación' => [
             'curso', 'facultad', 'universidad', 'colegio',
             'ingles', 'apunte', 'matricula', 'capacitacion',

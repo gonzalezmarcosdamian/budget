@@ -501,7 +501,6 @@ final class Reports
         $partes = [
             ['🔒', 'Fijos', $f['fijos']],
             ['🛒', 'Consumo', $f['consumo']],
-            ['🤝', 'Prestado', $f['prestado']],
             ['📈', 'Invertido', $f['invertido']],
             ['🔁', 'A cuenta tuya', $f['aPropio']],
         ];

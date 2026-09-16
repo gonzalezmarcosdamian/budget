@@ -557,9 +557,6 @@ final class ExpenseRepository
         ];
     }
 
-    /** La categoría de la plata que se presta y vuelve. */
-    public const CATEGORIA_PRESTAMOS = 'Préstamos y ayuda';
-
     /**
      * El flujo de caja del período, separando propio de terceros.
      *
@@ -585,16 +582,16 @@ final class ExpenseRepository
      * gastoRealEntre().
      *
      * Los cuatro destinos de la salida particionan el total sin
-     * solaparse: fijos + consumo + prestado + invertido + aPropio suma
-     * exactamente lo que salió, y por eso los porcentajes cierran. Mover
-     * plata a una cuenta propia va en su propio balde y no en consumo,
-     * que era lo que hacía decir "gastaste $200.000" y "consumiste
-     * $5.200.000" en el mismo mensaje.
+     * solaparse: fijos + consumo + invertido + aPropio suma exactamente
+     * lo que salió, y por eso los porcentajes cierran. Mover plata a una
+     * cuenta propia va en su propio balde y no en consumo, que era lo
+     * que hacía decir "gastaste $200.000" y "consumiste $5.200.000" en
+     * el mismo mensaje.
      *
      * @return array{entroTerceros:Money, entroPropio:Money,
      *               salioTerceros:Money, salioPropio:Money,
      *               gastoReal:int, consumo:Money, fijos:Money,
-     *               prestado:Money, invertido:Money, aPropio:Money}
+     *               invertido:Money, aPropio:Money}
      */
     public function flujoDeCaja(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
     {
@@ -615,13 +612,8 @@ final class ExpenseRepository
                                    AND COALESCE(cp.es_propia,0) = 1
                                   THEN e.monto_ars END), 0) AS aPropio,
                 COALESCE(SUM(CASE WHEN e.tipo = :gasto AND COALESCE(cp.es_propia,0) = 0
-                                   AND c.nombre = :prestamos
-                                  THEN e.monto_ars END), 0) AS prestado,
-                COALESCE(SUM(CASE WHEN e.tipo = :gasto2 AND COALESCE(cp.es_propia,0) = 0
-                                   AND COALESCE(c.nombre,'') <> :prestamos2
                                    AND e.naturaleza = :fijo THEN e.monto_ars END), 0) AS fijos,
-                COALESCE(SUM(CASE WHEN e.tipo = :gasto3 AND COALESCE(cp.es_propia,0) = 0
-                                   AND COALESCE(c.nombre,'') <> :prestamos3
+                COALESCE(SUM(CASE WHEN e.tipo = :gasto2 AND COALESCE(cp.es_propia,0) = 0
                                    AND e.naturaleza <> :fijo2 THEN e.monto_ars END), 0) AS consumo
              FROM expenses e
              LEFT JOIN categories c ON c.id = e.category_id
@@ -643,10 +635,6 @@ final class ExpenseRepository
             'inversion4' => Draft::TIPO_INVERSION,
             'gasto' => Draft::TIPO_GASTO,
             'gasto2' => Draft::TIPO_GASTO,
-            'gasto3' => Draft::TIPO_GASTO,
-            'prestamos' => self::CATEGORIA_PRESTAMOS,
-            'prestamos2' => self::CATEGORIA_PRESTAMOS,
-            'prestamos3' => self::CATEGORIA_PRESTAMOS,
             'fijo' => Draft::NATURALEZA_FIJO,
             'fijo2' => Draft::NATURALEZA_FIJO,
             'usuario' => $userId,
@@ -668,7 +656,6 @@ final class ExpenseRepository
             'gastoReal' => $this->gastoRealEntre($userId, $desde, $hasta),
             'consumo' => $plata('consumo'),
             'fijos' => $plata('fijos'),
-            'prestado' => $plata('prestado'),
             'invertido' => $plata('invertido'),
             'aPropio' => $plata('aPropio'),
         ];
