@@ -164,7 +164,7 @@ final class Reports
         foreach ($this->gastos->totalPorCategoria($userId, $desde, $hasta) as $renglon) {
             $lineas[] = sprintf(
                 '%s %s — <b>%s</b>  <i>%d%%</i>',
-                $renglon['emoji'],
+                ExpenseCard::escapar((string) $renglon['emoji']),
                 ExpenseCard::escapar($renglon['categoria']),
                 ExpenseCard::escapar($renglon['total']->formatear()),
                 $renglon['total']->porcentajeDe($total)

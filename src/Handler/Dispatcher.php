@@ -138,9 +138,10 @@ final class Dispatcher
             '/topentrantes' => $this->rankings->topEntrantes($userId, Periodo::desde(Periodo::MES, $hoy)),
             '/topsalientes' => $this->rankings->topSalientes($userId, Periodo::desde(Periodo::MES, $hoy)),
             '/mercadopago' => MercadoPagoWizard::pasos(),
+            '/desvincular' => $this->wizardMp()->desvincular($userId),
             '/avisos' => $this->alternarAvisos($userId),
             '/recurrentes' => $this->reportes->recurrentes($userId),
-            '/revisar' => $this->revisar($userId, $update->chatId),
+            '/revisar' => $this->tarjetas()->revisar($userId, $update->chatId),
             '/inversiones' => $this->reportes->inversiones($userId, $hoy),
             default => 'No conozco ese comando. Probá /ayuda.',
         };
@@ -472,7 +473,7 @@ final class Dispatcher
         }
 
         if (Recordatorios::esAccion($update->callbackData)) {
-            $this->manejarRecurrente($userId, $update);
+            $this->recordatorios()->manejarRespuesta($userId, $update);
 
             return;
         }
@@ -486,10 +487,11 @@ final class Dispatcher
         }
 
         match ($accion['accion']) {
-            ExpenseCard::ACCION_CONFIRMAR => $this->confirmar($userId, $update, $accion['expenseId']),
-            ExpenseCard::ACCION_DESCARTAR => $this->descartar($userId, $update, $accion['expenseId']),
-            ExpenseCard::ACCION_ELEGIR_CATEGORIA => $this->ofrecerCategorias($userId, $update, $accion['expenseId']),
-            ExpenseCard::ACCION_FIJAR_CATEGORIA => $this->fijarCategoria($userId, $update, $accion),
+            ExpenseCard::ACCION_CONFIRMAR => $this->tarjetas()->confirmar($userId, $update, $accion['expenseId']),
+            ExpenseCard::ACCION_DESCARTAR => $this->tarjetas()->descartar($userId, $update, $accion['expenseId']),
+            ExpenseCard::ACCION_ELEGIR_CATEGORIA
+                => $this->tarjetas()->ofrecerCategorias($userId, $update, $accion['expenseId']),
+            ExpenseCard::ACCION_FIJAR_CATEGORIA => $this->tarjetas()->fijarCategoria($userId, $update, $accion),
             default => $this->telegram->responderCallback($update->callbackQueryId),
         };
     }
@@ -507,349 +509,34 @@ final class Dispatcher
         $lote = $accion['lote'];
 
         match ($accion['accion']) {
-            ExpenseCard::ACCION_LOTE_CONFIRMAR => $this->confirmarLote($userId, $update, $lote),
-            ExpenseCard::ACCION_LOTE_DESCARTAR => $this->descartarLote($userId, $update, $lote),
-            ExpenseCard::ACCION_LOTE_DETALLE => $this->mostrarLote($userId, $update, $lote),
+            ExpenseCard::ACCION_LOTE_CONFIRMAR => $this->lotes()->confirmar($userId, $update, $lote),
+            ExpenseCard::ACCION_LOTE_DESCARTAR => $this->lotes()->descartar($userId, $update, $lote),
+            ExpenseCard::ACCION_LOTE_DETALLE => $this->lotes()->mostrar($userId, $update, $lote),
             default => $this->telegram->responderCallback($update->callbackQueryId),
         };
     }
 
-    /**
-     * El usuario responde al recordatorio de un gasto que se repite.
-     *
-     * Cargarlo lo da por hecho con el monto conocido; saltearlo corre el
-     * aviso al mes que viene. En los dos casos el recordatorio no vuelve
-     * a aparecer este mes.
-     */
-    private function manejarRecurrente(int $userId, Update $update): void
+    private function tarjetas(): Tarjetas
     {
-        $accion = ExpenseCard::decodificar($update->callbackData);
-        $r = $accion === null ? null : $this->recurrentes->porId($userId, $accion['expenseId']);
+        return new Tarjetas($this->telegram, $this->gastos, $this->categorias, $this->reportes);
+    }
 
-        if ($accion === null || $r === null) {
-            $this->telegram->responderCallback($update->callbackQueryId);
-
-            return;
-        }
-
-        $ahora = $this->reloj->ahora();
-        $this->recurrentes->posponerAlMesQueViene($userId, (int) $r['id'], $ahora);
-
-        if ($accion['accion'] === Recordatorios::ACCION_SALTEAR) {
-            $this->telegram->responderCallback($update->callbackQueryId, 'Salteado');
-            $this->telegram->editarMensaje(
-                $update->chatId,
-                $update->messageId,
-                sprintf('⏭ <i>%s: salteado este mes.</i>', ExpenseCard::escapar((string) $r['comercio']))
-            );
-
-            return;
-        }
-
-        $monto = Money::deDecimal((string) $r['monto_esperado']);
-
-        $borrador = new Draft(
-            monto: $monto,
-            fecha: $ahora,
-            comercio: (string) $r['comercio'],
-            descripcion: (string) $r['comercio'],
-            categoria: $r['categoria'] === null ? null : (string) $r['categoria'],
-            medioPago: '',
-            fuente: Draft::FUENTE_MANUAL,
-            confianza: 1.0,
-            modelo: 'recurrente',
-            tipo: Draft::TIPO_GASTO,
-            naturaleza: (string) ($r['naturaleza'] ?? Draft::NATURALEZA_FIJO),
-        );
-
-        $this->gastos->guardarBorrador(
-            $userId,
-            $borrador,
-            $r['category_id'] === null ? null : (int) $r['category_id'],
-            null,
-            sprintf('recurrente:%d:%s', (int) $r['id'], $ahora->format('Y-m')),
-            ExpenseRepository::ESTADO_CONFIRMADO
-        );
-
-        $this->telegram->responderCallback($update->callbackQueryId, 'Cargado');
-        $this->telegram->editarMensaje(
-            $update->chatId,
-            $update->messageId,
-            sprintf(
-                "✅ <b>%s</b> — <b>%s</b>\n📁 %s",
-                ExpenseCard::escapar((string) $r['comercio']),
-                ExpenseCard::escapar($monto->formatear()),
-                ExpenseCard::escapar((string) ($r['categoria'] ?? 'Sin categoría'))
-            )
+    private function recordatorios(): Recordatorios
+    {
+        return new Recordatorios(
+            $this->recurrentes,
+            $this->gastos,
+            $this->telegram,
+            $this->reloj,
+            $this->log
         );
     }
 
-    private function confirmarLote(int $userId, Update $update, string $lote): void
+    private function lotes(): Lotes
     {
-        $resumen = $this->gastos->resumenDeLote($userId, $lote);
-        $cuantos = $this->gastos->confirmarLote($userId, $lote);
-
-        $this->telegram->responderCallback(
-            $update->callbackQueryId,
-            $cuantos > 0 ? "Guardados {$cuantos}" : 'Ya estaba resuelto'
-        );
-
-        if ($cuantos === 0) {
-            return;
-        }
-
-        $this->telegram->editarMensaje(
-            $update->chatId,
-            $update->messageId,
-            sprintf(
-                "✅ <b>Resumen importado</b>\n\n%d consumos — <b>%s</b>",
-                $cuantos,
-                ExpenseCard::escapar($resumen['total']->formatear())
-            )
-        );
+        return new Lotes($this->telegram, $this->gastos);
     }
 
-    private function descartarLote(int $userId, Update $update, string $lote): void
-    {
-        $cuantos = $this->gastos->descartarLote($userId, $lote);
-
-        $this->telegram->responderCallback($update->callbackQueryId, 'Descartado');
-        $this->telegram->editarMensaje(
-            $update->chatId,
-            $update->messageId,
-            sprintf('🗑 <i>Importación descartada: %d consumos.</i>', $cuantos)
-        );
-    }
-
-    /**
-     * El detalle va como texto y no como tarjetas: cuarenta tarjetas son
-     * cuarenta mensajes, y el chat queda inutilizable.
-     */
-    private function mostrarLote(int $userId, Update $update, string $lote): void
-    {
-        $this->telegram->responderCallback($update->callbackQueryId);
-        $filas = $this->gastos->pendientesDeLote($userId, $lote);
-
-        if ($filas === []) {
-            return;
-        }
-
-        $lineas = ['🧾 <b>Detalle de la importación</b>', ''];
-
-        foreach ($filas as $fila) {
-            $monto = Money::deDecimal((string) $fila['monto'], (string) $fila['moneda']);
-            $comercio = (string) $fila['comercio'];
-
-            $lineas[] = sprintf(
-                '%s  %s  %s — <b>%s</b>',
-                (string) $fila['emoji'],
-                self::soloDiaYMes((string) $fila['fecha']),
-                ExpenseCard::escapar($comercio !== '' ? $comercio : 'Consumo'),
-                ExpenseCard::escapar($monto->formatear())
-            );
-        }
-
-        $lineas[] = '';
-        $lineas[] = '<i>Si algo está mal, descartá la importación y mandame el resumen de nuevo.</i>';
-
-        $this->telegram->enviarMensaje($update->chatId, implode("\n", $lineas));
-    }
-
-    private static function soloDiaYMes(string $fechaIso): string
-    {
-        $fecha = \DateTimeImmutable::createFromFormat('Y-m-d', $fechaIso);
-
-        return $fecha === false ? $fechaIso : $fecha->format('d/m');
-    }
-
-    private function confirmar(int $userId, Update $update, int $expenseId): void
-    {
-        $guardado = $this->gastos->confirmar($userId, $expenseId);
-
-        $this->telegram->responderCallback($update->callbackQueryId, $guardado ? 'Guardado' : 'Ya estaba resuelto');
-
-        if ($guardado) {
-            $this->reemplazarTarjeta($userId, $update, $expenseId, '✅');
-        }
-    }
-
-    private function descartar(int $userId, Update $update, int $expenseId): void
-    {
-        $this->gastos->descartar($userId, $expenseId);
-        $this->telegram->responderCallback($update->callbackQueryId, 'Descartado');
-        $this->telegram->editarMensaje($update->chatId, $update->messageId, '🗑 <i>Gasto descartado.</i>');
-    }
-
-    private function ofrecerCategorias(int $userId, Update $update, int $expenseId): void
-    {
-        $this->telegram->responderCallback($update->callbackQueryId);
-        $this->telegram->editarMensaje(
-            $update->chatId,
-            $update->messageId,
-            '📁 ¿En qué categoría va?',
-            ExpenseCard::tecladoDeCategorias($expenseId, $this->categorias->disponibles($userId))
-        );
-    }
-
-    /** @param array{accion:string, expenseId:int, valor:int} $accion */
-    private function fijarCategoria(int $userId, Update $update, array $accion): void
-    {
-        $gasto = $this->gastos->porId($userId, $accion['expenseId']);
-
-        if ($gasto === null || $accion['valor'] === 0) {
-            $this->telegram->responderCallback($update->callbackQueryId);
-
-            return;
-        }
-
-        $yaEstabaConfirmado = ($gasto['estado'] ?? '') === ExpenseRepository::ESTADO_CONFIRMADO;
-
-        $this->gastos->recategorizar($userId, $accion['expenseId'], $accion['valor']);
-
-        // La corrección se vuelve regla: la próxima vez no hay que
-        // preguntar ni gastar una llamada de IA.
-        $this->categorias->recordarRegla($userId, (string) $gasto['comercio'], $accion['valor']);
-        $this->gastos->confirmar($userId, $accion['expenseId']);
-
-        $this->telegram->responderCallback($update->callbackQueryId, 'Guardado');
-        $this->reemplazarTarjeta($userId, $update, $accion['expenseId'], '✅');
-
-        // Si lo que se corrigió ya estaba confirmado, esto es limpieza
-        // de la cola y no la carga de un gasto nuevo: sigue el próximo.
-        if ($yaEstabaConfirmado) {
-            $this->revisar($userId, $update->chatId);
-        }
-    }
-
-    private function reemplazarTarjeta(int $userId, Update $update, int $expenseId, string $icono): void
-    {
-        $gasto = $this->gastos->porId($userId, $expenseId);
-
-        if ($gasto === null) {
-            return;
-        }
-
-        $monto = Money::deDecimal((string) $gasto['monto'], (string) $gasto['moneda']);
-        $comercio = (string) $gasto['comercio'];
-        $categoria = (string) ($gasto['categoria'] ?? 'Sin categoría');
-
-        $lineas = [
-            sprintf(
-                '%s <b>%s</b> — <b>%s</b>',
-                $icono,
-                ExpenseCard::escapar($comercio !== '' ? $comercio : 'Gasto'),
-                ExpenseCard::escapar($monto->formatear())
-            ),
-            '📁 ' . ExpenseCard::escapar($categoria),
-        ];
-
-        // Guardar un gasto sin decir cómo viene el mes deja al usuario
-        // con un dato y sin ninguna consecuencia.
-        $acumulado = $this->acumuladoDeCategoria($userId, $gasto);
-
-        if ($acumulado !== '') {
-            $lineas[] = '';
-            $lineas[] = $acumulado;
-        }
-
-        $this->telegram->editarMensaje($update->chatId, $update->messageId, implode("\n", $lineas));
-    }
-
-    /**
-     * Cuánto va del mes en esa categoría, para que confirmar un gasto
-     * también informe algo.
-     *
-     * @param array<string,mixed> $gasto
-     */
-    private function acumuladoDeCategoria(int $userId, array $gasto): string
-    {
-        $categoryId = $gasto['category_id'] ?? null;
-
-        if ($categoryId === null) {
-            return '';
-        }
-
-        $hoy = $this->reloj->ahora();
-        $acumulado = $this->gastos->totalDeCategoria(
-            $userId,
-            (int) $categoryId,
-            $hoy->modify('first day of this month'),
-            $hoy->modify('last day of this month')
-        );
-
-        if ($acumulado->centavos === 0) {
-            return '';
-        }
-
-        return sprintf(
-            '<i>Llevás %s en %s este mes.</i>',
-            ExpenseCard::escapar($acumulado->formatear()),
-            ExpenseCard::escapar((string) ($gasto['categoria'] ?? 'esa categoría'))
-        );
-    }
-
-    /**
-     * Lo que se dice cuando no se entendió.
-     *
-     * "No encontré un importe" es un callejón sin salida: no dice qué
-     * más se puede hacer. Si el bot no entendió, al menos que muestre
-     * las salidas.
-     */
-    private static function noEntendi(): string
-    {
-        return implode("\n", [
-            'No pude sacar un gasto de ahí. Probá con alguna de estas:',
-            '',
-            '• <code>1200 super</code> — un gasto',
-            '• <code>cuánto gasté en súper este mes</code> — una pregunta',
-            '• Una foto del ticket, un audio o el PDF del resumen',
-            '• /mes para el resumen completo',
-        ]);
-    }
-
-    /**
-     * Manda el próximo movimiento sin clasificar, con los botones.
-     *
-     * Devuelve cadena vacía cuando ya mandó el mensaje él mismo: el
-     * teclado no entra por el camino normal de respuesta.
-     */
-    private function revisar(int $userId, int $chatId): string
-    {
-        $texto = $this->reportes->aCategorizar($userId);
-        $siguiente = $this->gastos->sinCategorizar($userId, 1)[0] ?? null;
-
-        if ($siguiente === null) {
-            return $texto;
-        }
-
-        $this->telegram->enviarMensaje(
-            $chatId,
-            $texto,
-            ExpenseCard::tecladoDeCategorias(
-                (int) $siguiente['id'],
-                // Sin sacar "Otros" el comando entra en bucle: es la
-                // categoría que define la cola, así que elegirla deja
-                // al movimiento donde estaba y vuelve a salir sorteado.
-                array_values(array_filter(
-                    $this->categorias->disponibles($userId),
-                    static fn (array $c): bool
-                        => $c['nombre'] !== ExpenseRepository::CATEGORIA_OTROS
-                ))
-            )
-        );
-
-        return '';
-    }
-
-    /**
-     * Cómo conectar Mercado Pago, paso a paso.
-     *
-     * No es un asistente con estado: el token de Mercado Pago empieza
-     * con APP_USR- y no se parece a nada más que un usuario escriba, así
-     * que el Dispatcher lo reconoce solo cuando llega pegado. Un wizard
-     * de verdad necesitaría guardar en qué paso está cada usuario, y
-     * para dos pasos no vale la máquina de estados.
-     */
     private function wizardMp(): MercadoPagoWizard
     {
         return new MercadoPagoWizard(

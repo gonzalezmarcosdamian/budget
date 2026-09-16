@@ -86,19 +86,21 @@ final class TestDatabase
      */
     private const TABLAS_QUE_SE_VACIAN = [
         'expenses', 'merchant_rules', 'updates_seen', 'ai_calls',
-        'budgets', 'recurring', 'contrapartes', 'users',
+        'budgets', 'recurring', 'contrapartes', 'mp_cuentas', 'users',
     ];
 
     /** Se vacían aparte, o no se vacían nunca, y por qué. */
     public const TABLAS_APARTE = [
         // Cuelgan una de otra por clave foránea: van con DELETE.
         'patrimonio_snapshot', 'patrimonio_posicion',
+        // Antes estaba acá con el argumento de que ningún test la usa.
+        // Lo era hasta que uno la usó: como `users` sí se trunca y su
+        // auto_increment vuelve a 1, el user_id 1 se reusa y choca con
+        // uk_mp_cuentas_user. Ahora se vacía con las demás.
         // Las categorías base (user_id 0) son datos de la migración.
         'categories',
         // El registro de migraciones aplicadas: vaciarlo re-correría todo.
         'migrations',
-        // Tokens cifrados de terceros: ningún test los usa.
-        'mp_cuentas',
     ];
 
     public static function limpiar(): void

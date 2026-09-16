@@ -20,26 +20,27 @@ final class Menu
     /**
      * Comando (sin barra) => descripción.
      *
-     * Telegram sólo acepta [a-z0-9_] y corta la descripción en 256
-     * caracteres, así que acá no van tildes ni eñes.
+     * La clave sólo acepta [a-z0-9_]: ahí no van tildes ni eñes. La
+     * descripción sí las acepta, y se corta en 256 caracteres.
      *
      * @var array<string,string>
      */
     public const COMANDOS = [
         'hoy' => 'Lo del día, contra tu promedio',
         'mes' => 'El mes: fijo vs variable, proyección y transferencias',
-        'trimestre' => 'Los ultimos 3 meses, mes a mes',
-        'anio' => 'Los ultimos 12 meses, mes a mes',
-        'topgastos' => 'Los gastos mas grandes del mes',
-        'topentrantes' => 'Quien te mando mas plata',
-        'topsalientes' => 'A quien le mandaste mas plata',
-        'flujo' => 'Flujo de caja: que entro, que salio y adonde fue',
+        'trimestre' => 'Los últimos 3 meses, mes a mes',
+        'anio' => 'Los últimos 12 meses, mes a mes',
+        'topgastos' => 'Los gastos más grandes del mes',
+        'topentrantes' => 'Quién te mandó más plata',
+        'topsalientes' => 'A quién le mandaste más plata',
+        'flujo' => 'Flujo de caja: qué entró, qué salió y adónde fue',
         'ultimos' => 'Los últimos 10 movimientos',
         'inversiones' => 'El portafolio contra el de hace un mes',
-        'revisar' => 'Clasificar los movimientos que quedaron sin categoria',
+        'revisar' => 'Clasificar los movimientos que quedaron sin categoría',
         'recurrentes' => 'Los gastos que se repiten todos los meses',
         'mercadopago' => 'Conectar tu cuenta de Mercado Pago',
-        'avisos' => 'Prender o apagar los avisos automaticos',
+        'desvincular' => 'Desconectar Mercado Pago',
+        'avisos' => 'Prender o apagar los avisos automáticos',
         'ayuda' => 'Todo lo que sé hacer',
     ];
 

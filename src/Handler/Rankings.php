@@ -51,7 +51,7 @@ final class Rankings
             $lineas[] = sprintf(
                 '%d. %s %s — <b>%s</b>',
                 $i + 1,
-                (string) $f['emoji'],
+                ExpenseCard::escapar((string) $f['emoji']),
                 ExpenseCard::escapar(mb_substr((string) $f['comercio'], 0, 34)),
                 ExpenseCard::escapar($monto->formatear())
             );

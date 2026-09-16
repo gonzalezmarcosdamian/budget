@@ -98,6 +98,7 @@ final class App
     {
         return new Recordatorios(
             new RecurringRepository($this->pdo()),
+            new ExpenseRepository($this->pdo()),
             $this->telegram(),
             $this->reloj,
             $this->log,

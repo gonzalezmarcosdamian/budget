@@ -50,6 +50,27 @@ final class MercadoPagoWizard
         return str_contains($texto, 'APP_USR-') || str_contains($texto, 'TEST-');
     }
 
+    /**
+     * Corta el vínculo.
+     *
+     * Desactiva la cuenta de este lado, pero lo que de verdad protege al
+     * usuario es revocar el token en el panel de Mercado Pago: mientras
+     * exista, sigue siendo una credencial válida sobre su cuenta, esté o
+     * no guardada acá. Por eso el mensaje insiste con eso.
+     */
+    public function desvincular(int $userId): string
+    {
+        $habia = (new MercadoPagoRepository($this->pdo))->desactivar($userId);
+
+        if (!$habia) {
+            return 'No tenés ninguna cuenta de Mercado Pago conectada.';
+        }
+
+        return "🔌 Listo, desconecté tu cuenta. Dejo de importar movimientos.\n\n"
+            . '⚠️ <b>Revocá el token en Mercado Pago igual</b>: borrarlo de acá no lo '
+            . 'invalida. Panel → tu aplicación → Credenciales de producción.';
+    }
+
     /** El token de producción de Mercado Pago tiene una forma inconfundible. */
     private static function pareceTokenDeMercadoPago(string $texto): bool
     {
