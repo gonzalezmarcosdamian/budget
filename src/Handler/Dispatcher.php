@@ -436,6 +436,24 @@ final class Dispatcher
 
     private function proponer(int $userId, int $chatId, Draft $borrador): void
     {
+        // El parser entiende "100 usd hosting", pero `monto_ars` se
+        // guarda con el mismo número sin convertir: ese gasto entraba al
+        // total del mes como $100 pesos. Hasta que haya tipo de cambio,
+        // decirlo es mejor que un total silenciosamente mal.
+        if ($borrador->monto->moneda !== 'ARS') {
+            $this->telegram->enviarMensaje(
+                $chatId,
+                sprintf(
+                    "🚧 Todavía no sé manejar %s.\n\n"
+                        . '<i>No lo guardo, porque lo contaría como si fueran pesos y '
+                        . 'te ensuciaría el total del mes. Pasámelo convertido y lo cargo.</i>',
+                    ExpenseCard::escapar($borrador->monto->moneda)
+                )
+            );
+
+            return;
+        }
+
         $categoryId = $this->resolverCategoria($userId, $borrador);
         $expenseId = $this->gastos->guardarBorrador($userId, $borrador, $categoryId);
 

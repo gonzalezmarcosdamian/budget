@@ -155,7 +155,7 @@ final class Reports
             'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>',
         ];
 
-        foreach ($this->contexto($userId, $enElMes, $desde, $total) as $linea) {
+        foreach ($this->contexto($userId, $enElMes, $desde) as $linea) {
             $lineas[] = $linea;
         }
 
@@ -191,8 +191,13 @@ final class Reports
         int $userId,
         DateTimeImmutable $hoy,
         DateTimeImmutable $desde,
-        Money $total,
     ): array {
+        // Lo acumulado hasta hoy, no el mes entero: el promedio diario y
+        // la proyección dividen por los días transcurridos, así que un
+        // gasto con fecha futura —una cuota mal leída en un resumen—
+        // duplicaba las dos cifras. Y /hoy sí acotaba bien, con lo cual
+        // los dos comandos daban promedios distintos del mismo mes.
+        $total = $this->gastos->totalEntre($userId, $desde, $hoy);
         $lineas = [];
 
         // 1. Fijo contra variable: sobre el variable se puede decidir.
@@ -353,19 +358,15 @@ final class Reports
      * tarjeta, así que lo que el categorizador no supo ubicar no tenía
      * arreglo desde el bot. Esto es la cola para arreglarlo de a uno.
      */
-    public function aCategorizar(int $userId): string
+    public function aCategorizar(int $userId, ?array $siguiente = null): string
     {
-        $falta = $this->gastos->cuantoFaltaCategorizar($userId);
-
-        if ($falta['cuantos'] === 0) {
-            return '✅ No queda nada sin clasificar.';
-        }
-
-        $siguiente = $this->gastos->sinCategorizar($userId, 1)[0] ?? null;
+        $siguiente ??= $this->gastos->sinCategorizar($userId, 1)[0] ?? null;
 
         if ($siguiente === null) {
             return '✅ No queda nada sin clasificar.';
         }
+
+        $falta = $this->gastos->cuantoFaltaCategorizar($userId);
 
         $monto = Money::deDecimal((string) $siguiente['monto_ars']);
 

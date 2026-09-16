@@ -25,6 +25,7 @@ use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
 use Budget\Handler\Rankings;
 use Budget\Handler\Reports;
+use Budget\Handler\Tarjetas;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
 use Budget\Repository\PatrimonioRepository;
@@ -94,7 +95,17 @@ $comandos = [
     '/ultimos' => static fn (): string => $reportes->ultimos($userId),
     '/inversiones' => static fn (): string => $reportes->inversiones($userId, $hoy),
     '/recurrentes' => static fn (): string => $reportes->recurrentes($userId),
-    '/revisar' => static fn (): string => $reportes->aCategorizar($userId),
+    // Por el handler real y no por Reports directo: /revisar es el único
+    // comando de reporte cuyo handler tiene lógica propia —arma el
+    // teclado, filtra Otros, manda el mensaje él mismo— y saltearlo dejó
+    // justamente esa parte sin cubrir por nada.
+    '/revisar' => static fn (): string => (new Tarjetas(
+        $app->telegram(),
+        new ExpenseRepository($pdo),
+        new CategoryRepository($pdo),
+        $reportes,
+        $app->reloj
+    ))->revisar($userId, 0),
 ];
 
 $preguntas = [

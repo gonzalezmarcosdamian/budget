@@ -20,10 +20,31 @@ declare(strict_types=1);
  *
  * Chequea tres formas, que son las que se rompen al mover código:
  *
- *     $this->metodo()        el método existe en la clase
- *     self::metodo()         idem, estático
- *     $this->dep->metodo()   la propiedad existe, y el método en su tipo
+ *     $this->metodo()            el método existe en la clase
+ *     self::metodo()             idem, estático
+ *     $this->dep->metodo()       la propiedad existe, y el método en su tipo
+ *     $this->fabrica()->metodo() el método existe en el tipo que devuelve
  */
+
+/** @return int|null la posición del `)` que cierra el `(` de $desde */
+function cierraParentesis(array $tokens, int $desde): ?int
+{
+    $nivel = 0;
+
+    for ($i = $desde, $n = count($tokens); $i < $n; $i++) {
+        if ($tokens[$i] === '(') {
+            $nivel++;
+        } elseif ($tokens[$i] === ')') {
+            $nivel--;
+
+            if ($nivel === 0) {
+                return $i;
+            }
+        }
+    }
+
+    return null;
+}
 
 /**
  * Las llamadas que hace un archivo, leídas del código y no adivinadas.
@@ -35,6 +56,7 @@ function llamadasDe(string $codigo): array
     $tokens = token_get_all($codigo);
     $propias = [];
     $sobreDependencia = [];
+    $cadenas = [];
 
     foreach ($tokens as $i => $token) {
         $esThis = is_array($token) && $token[0] === T_VARIABLE && $token[1] === '$this';
@@ -76,6 +98,35 @@ function llamadasDe(string $codigo): array
         if ($despues[1] === '(') {
             $propias[] = $identificador;
 
+            // Y si después del paréntesis de cierre viene `->`, es una
+            // cadena: `$this->tarjetas()->revisar()`. Ese es el patrón
+            // con el que el Dispatcher delega en todos sus handlers, así
+            // que sin esto el guard no mira justamente lo que más se
+            // mueve. El tipo lo da el `: Tipo` de la declaración.
+            $cierre = cierraParentesis($tokens, $despues[0]);
+
+            if ($cierre !== null) {
+                $flechaCadena = siguienteUtil($tokens, $cierre);
+
+                if ($flechaCadena !== null
+                    && is_array($flechaCadena[1])
+                    && $flechaCadena[1][0] === T_OBJECT_OPERATOR
+                ) {
+                    $encadenado = siguienteUtil($tokens, $flechaCadena[0]);
+
+                    // Con el paréntesis: sin él es una propiedad
+                    // —`$this->sumaDe()->centavos`— y no hay método
+                    // que verificar.
+                    if ($encadenado !== null
+                        && is_array($encadenado[1])
+                        && $encadenado[1][0] === T_STRING
+                        && (siguienteUtil($tokens, $encadenado[0])[1] ?? null) === '('
+                    ) {
+                        $cadenas[] = [$identificador, $encadenado[1][1]];
+                    }
+                }
+            }
+
             continue;
         }
 
@@ -95,6 +146,7 @@ function llamadasDe(string $codigo): array
     return [
         'propias' => array_values(array_unique($propias)),
         'sobreDependencia' => array_values(array_unique($sobreDependencia, SORT_REGULAR)),
+        'cadenas' => array_values(array_unique($cadenas, SORT_REGULAR)),
     ];
 }
 
@@ -185,16 +237,19 @@ prueba('todo metodo que se llama sobre una dependencia existe en su tipo', funct
 
             $tipo = $reflexion->getProperty($propiedad)->getType();
 
-            // Sólo se puede verificar lo que está tipado con una clase
-            // nuestra: un array o un tipo nativo no tiene métodos que
-            // chequear, y una interfaz de PHP no es asunto de este test.
+            // Sólo lo tipado con algo nuestro: un array o un tipo
+            // nativo no tiene métodos que chequear. Las interfaces del
+            // proyecto sí cuentan —`Clock`, `LlmProvider`— y quedaban
+            // afuera porque `class_exists` devuelve false para ellas.
             if (!$tipo instanceof ReflectionNamedType || $tipo->isBuiltin()) {
                 continue;
             }
 
             $nombreTipo = $tipo->getName();
 
-            if (!str_starts_with($nombreTipo, 'Budget\\') || !class_exists($nombreTipo)) {
+            $existe = class_exists($nombreTipo) || interface_exists($nombreTipo);
+
+            if (!str_starts_with($nombreTipo, 'Budget\\') || !$existe) {
                 continue;
             }
 
@@ -213,4 +268,61 @@ prueba('todo metodo que se llama sobre una dependencia existe en su tipo', funct
     }
 
     afirmar($revisadas > 30, "sólo se revisaron {$revisadas} llamadas: el analizador no está leyendo nada");
+});
+
+prueba('todo metodo encadenado sobre una fabrica propia existe', function (): void {
+    // `$this->tarjetas()->revisar()` es como el Dispatcher delega en los
+    // cuatro handlers que se le extrajeron. Sin este chequeo, renombrar
+    // `Tarjetas::revisar` deja lint, guards y suite en verde, y el
+    // comando revienta en producción con el 200 ya contestado.
+    $revisadas = 0;
+    $archivos = array_merge(
+        glob(__DIR__ . '/../src/**/*.php') ?: [],
+        glob(__DIR__ . '/../src/*.php') ?: []
+    );
+
+    foreach ($archivos as $archivo) {
+        $codigo = (string) file_get_contents($archivo);
+        $clase = claseDeArchivo($codigo);
+
+        if ($clase === null) {
+            continue;
+        }
+
+        $reflexion = new ReflectionClass($clase);
+
+        foreach (llamadasDe($codigo)['cadenas'] as [$fabrica, $metodo]) {
+            if (!$reflexion->hasMethod($fabrica)) {
+                continue;
+            }
+
+            $tipo = $reflexion->getMethod($fabrica)->getReturnType();
+
+            if (!$tipo instanceof ReflectionNamedType || $tipo->isBuiltin()) {
+                continue;
+            }
+
+            $devuelto = $tipo->getName();
+
+            if (!str_starts_with($devuelto, 'Budget\\')
+                || !(class_exists($devuelto) || interface_exists($devuelto))
+            ) {
+                continue;
+            }
+
+            $revisadas++;
+            afirmar(
+                (new ReflectionClass($devuelto))->hasMethod($metodo),
+                sprintf(
+                    '%s llama a $this->%s()->%s(), y %s no tiene ese método',
+                    $reflexion->getShortName(),
+                    $fabrica,
+                    $metodo,
+                    (new ReflectionClass($devuelto))->getShortName()
+                )
+            );
+        }
+    }
+
+    afirmar($revisadas > 5, "sólo se revisaron {$revisadas} cadenas: el analizador no está leyendo nada");
 });

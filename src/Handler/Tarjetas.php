@@ -177,8 +177,12 @@ final class Tarjetas
      */
     public function revisar(int $userId, int $chatId): string
     {
-        $texto = $this->reportes->aCategorizar($userId);
+        // Una sola consulta y no dos: con dos, el texto podía describir
+        // un movimiento y los botones llevar el id de otro —hay empates
+        // de importe— y la regla que se aprende quedaba mal para
+        // siempre, mirando un comercio y guardando otro.
         $siguiente = $this->gastos->sinCategorizar($userId, 1)[0] ?? null;
+        $texto = $this->reportes->aCategorizar($userId, $siguiente);
 
         if ($siguiente === null) {
             return $texto;

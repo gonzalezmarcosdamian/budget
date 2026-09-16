@@ -215,7 +215,7 @@ final class ExpenseRepository
                LEFT JOIN categories c ON c.id = e.category_id
               WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ?
                 AND e.fecha BETWEEN ? AND ?
-              ORDER BY e.monto_ars DESC
+              ORDER BY e.monto_ars DESC, e.id DESC
               LIMIT ' . max(1, min($limite, 50))
         );
         $sentencia->execute([
@@ -611,7 +611,8 @@ final class ExpenseRepository
                                    AND (COALESCE(cp.es_propia,0) = 1 OR e.tipo = :inversion2)
                                   THEN e.monto_ars END), 0) AS salio_propio,
                 COALESCE(SUM(CASE WHEN e.tipo = :inversion3 THEN e.monto_ars END), 0) AS invertido,
-                COALESCE(SUM(CASE WHEN e.tipo <> :ingreso5 AND COALESCE(cp.es_propia,0) = 1
+                COALESCE(SUM(CASE WHEN e.tipo <> :ingreso5 AND e.tipo <> :inversion4
+                                   AND COALESCE(cp.es_propia,0) = 1
                                   THEN e.monto_ars END), 0) AS aPropio,
                 COALESCE(SUM(CASE WHEN e.tipo = :gasto AND COALESCE(cp.es_propia,0) = 0
                                    AND c.nombre = :prestamos
@@ -639,6 +640,7 @@ final class ExpenseRepository
             'inversion' => Draft::TIPO_INVERSION,
             'inversion2' => Draft::TIPO_INVERSION,
             'inversion3' => Draft::TIPO_INVERSION,
+            'inversion4' => Draft::TIPO_INVERSION,
             'gasto' => Draft::TIPO_GASTO,
             'gasto2' => Draft::TIPO_GASTO,
             'gasto3' => Draft::TIPO_GASTO,
