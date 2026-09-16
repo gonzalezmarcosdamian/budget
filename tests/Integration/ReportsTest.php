@@ -649,11 +649,7 @@ prueba('[db] el top de gastos lista los movimientos, no las categorias', functio
     gastoConfirmado($ana, 40_000, 'Coto', '2026-09-13');
     gastoConfirmado($ana, 30_000, 'Coto', '2026-09-12');
 
-    $texto = $rankings->topGastos(
-        $ana,
-        new DateTimeImmutable('2026-09-01'),
-        new DateTimeImmutable('2026-09-30')
-    );
+    $texto = $rankings->topGastos($ana, Periodo::desde(Periodo::MES, new DateTimeImmutable('2026-09-15')));
 
     contiene($texto, '1. ', 'va numerado');
     contiene($texto, 'Ropa Rosario', 'el más grande primero');
@@ -683,15 +679,14 @@ prueba('[db] los tops de transferencias van en bruto y por direccion', function 
     $chico = gastoConfirmado($ana, 100_000, 'Otro', '2026-09-07');
     $pdo->exec("UPDATE expenses SET contraparte = '900000022' WHERE id = {$chico}");
 
-    $desde = new DateTimeImmutable('2026-09-01');
-    $hasta = new DateTimeImmutable('2026-09-30');
+    $mes = Periodo::desde(Periodo::MES, new DateTimeImmutable('2026-09-15'));
 
-    $salientes = $rankings->topSalientes($ana, $desde, $hasta);
+    $salientes = $rankings->topSalientes($ana, $mes);
     contiene($salientes, 'Uno — <b>$900.000</b>', 'el bruto, no el neto de $100.000');
     contiene($salientes, 'Otro — <b>$100.000</b>');
     contiene($salientes, '➖', 'el signo de lo que sale');
 
-    $entrantes = $rankings->topEntrantes($ana, $desde, $hasta);
+    $entrantes = $rankings->topEntrantes($ana, $mes);
     contiene($entrantes, 'Uno — <b>$800.000</b>', 'del otro lado, lo que entró');
     contiene($entrantes, '➕', 'el signo de lo que entra');
     afirmar(!str_contains($entrantes, 'Otro'), 'quien no mandó nada no aparece entre los entrantes');

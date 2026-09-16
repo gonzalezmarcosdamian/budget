@@ -87,9 +87,9 @@ $comandos = [
         => $reportes->delPeriodo($userId, Periodo::desde(Periodo::ANIO, $hoy)),
     '/trimestre' => static fn (): string
         => $reportes->delPeriodo($userId, Periodo::desde(Periodo::TRIMESTRE, $hoy)),
-    '/topgastos' => static fn (): string => $rankings->topGastos($userId, $mes->desde, $mes->hasta),
-    '/topentrantes' => static fn (): string => $rankings->topEntrantes($userId, $mes->desde, $mes->hasta),
-    '/topsalientes' => static fn (): string => $rankings->topSalientes($userId, $mes->desde, $mes->hasta),
+    '/topgastos' => static fn (): string => $rankings->topGastos($userId, $mes),
+    '/topentrantes' => static fn (): string => $rankings->topEntrantes($userId, $mes),
+    '/topsalientes' => static fn (): string => $rankings->topSalientes($userId, $mes),
     '/flujo' => static fn (): string => $reportes->flujo($userId, $hoy),
     '/ultimos' => static fn (): string => $reportes->ultimos($userId),
     '/inversiones' => static fn (): string => $reportes->inversiones($userId, $hoy),

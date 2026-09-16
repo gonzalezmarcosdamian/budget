@@ -556,12 +556,20 @@ final class Reports
             '',
         ];
 
-        foreach ($this->gastos->totalPorMesEntre($userId, $p->desde, $p->hasta) as $mes => $monto) {
+        // Con los meses vacíos adentro: si julio y septiembre tienen
+        // $300.000 cada uno y agosto no aparece, el promedio de $200.000
+        // se lee como un error. Un cero explícito lo explica.
+        $porMes = $this->gastos->totalPorMesEntre($userId, $p->desde, $p->hasta);
+        $cursor = $p->desde;
+
+        while ($cursor <= $p->hasta) {
+            $clave = $cursor->format('Y-m');
             $lineas[] = sprintf(
                 '%s — <b>%s</b>',
-                ExpenseCard::escapar(self::nombreDelMesCorto($mes)),
-                ExpenseCard::escapar($monto->formatear())
+                ExpenseCard::escapar(self::nombreDelMes($cursor)),
+                ExpenseCard::escapar(($porMes[$clave] ?? Money::deCentavos(0))->formatear())
             );
+            $cursor = $cursor->modify('first day of next month');
         }
 
         $lineas[] = '';
@@ -576,45 +584,6 @@ final class Reports
                 $r['total']->porcentajeDe($total)
             );
         }
-
-        return implode("\n", $lineas);
-    }
-
-    /** "2026-08" -> "Agosto 2026". */
-    private static function nombreDelMesCorto(string $aaaaMm): string
-    {
-        [$anio, $mes] = array_map('intval', explode('-', $aaaaMm));
-        $meses = [
-            1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-        ];
-
-        return ($meses[$mes] ?? '') . ' ' . $anio;
-    }
-
-    /** Resumen del año, mes a mes. */
-    public function delAnio(int $userId, DateTimeImmutable $hoy): string
-    {
-        $porMes = $this->gastos->totalPorMes($userId, (int) $hoy->format('Y'));
-
-        if ($porMes === []) {
-            return '📆 Todavía no hay gastos cargados este año.';
-        }
-
-        $lineas = ['📆 <b>' . $hoy->format('Y') . '</b>', ''];
-        $total = Money::deCentavos(0);
-
-        foreach ($porMes as $mes => $delMes) {
-            $total = $total->mas($delMes);
-            $lineas[] = sprintf(
-                '%s — <b>%s</b>',
-                ExpenseCard::escapar(self::nombreDelMes($hoy->setDate((int) $hoy->format('Y'), $mes, 1), false)),
-                ExpenseCard::escapar($delMes->formatear())
-            );
-        }
-
-        $lineas[] = '';
-        $lineas[] = 'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>';
 
         return implode("\n", $lineas);
     }

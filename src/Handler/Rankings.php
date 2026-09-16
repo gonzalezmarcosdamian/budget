@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Budget\Handler;
 
 use Budget\Expense\Draft;
+use Budget\Expense\Periodo;
 use Budget\Repository\ExpenseRepository;
 use Budget\Support\Money;
 use DateTimeImmutable;
@@ -30,17 +31,17 @@ final class Rankings
     {
     }
 
-    public function topGastos(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): string
+    public function topGastos(int $userId, Periodo $p): string
     {
-        $filas = $this->gastos->mayoresGastos($userId, $desde, $hasta, self::CUANTOS);
+        $filas = $this->gastos->mayoresGastos($userId, $p->desde, $p->hasta, self::CUANTOS);
 
         if ($filas === []) {
-            return '🔝 No hay gastos en ese período.';
+            return '🔝 No hay gastos en ' . ExpenseCard::escapar($p->etiqueta) . '.';
         }
 
         $lineas = [
             '🔝 <b>Los gastos más grandes</b>',
-            '<i>' . self::periodo($desde, $hasta) . '</i>',
+            '<i>' . ExpenseCard::escapar($p->etiqueta) . '</i>',
             '',
         ];
 
@@ -64,24 +65,22 @@ final class Rankings
         return implode("\n", $lineas);
     }
 
-    public function topEntrantes(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): string
+    public function topEntrantes(int $userId, Periodo $p): string
     {
         return $this->transferencias(
             $userId,
-            $desde,
-            $hasta,
+            $p,
             Draft::TIPO_INGRESO,
             '➕ <b>Quién te mandó más plata</b>',
             'Nadie te transfirió nada en ese período.'
         );
     }
 
-    public function topSalientes(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): string
+    public function topSalientes(int $userId, Periodo $p): string
     {
         return $this->transferencias(
             $userId,
-            $desde,
-            $hasta,
+            $p,
             Draft::TIPO_GASTO,
             '➖ <b>A quién le mandaste más plata</b>',
             'No transferiste nada a nadie en ese período.'
@@ -90,13 +89,18 @@ final class Rankings
 
     private function transferencias(
         int $userId,
-        DateTimeImmutable $desde,
-        DateTimeImmutable $hasta,
+        Periodo $p,
         string $tipo,
         string $titulo,
         string $vacio,
     ): string {
-        $filas = $this->gastos->mayoresTransferencias($userId, $desde, $hasta, $tipo, self::CUANTOS);
+        $filas = $this->gastos->mayoresTransferencias(
+            $userId,
+            $p->desde,
+            $p->hasta,
+            $tipo,
+            self::CUANTOS
+        );
 
         if ($filas === []) {
             return $vacio;
@@ -109,7 +113,7 @@ final class Rankings
             $total = $total->mas($f['total']);
         }
 
-        $lineas = [$titulo, '<i>' . self::periodo($desde, $hasta) . '</i>', ''];
+        $lineas = [$titulo, '<i>' . ExpenseCard::escapar($p->etiqueta) . '</i>', ''];
 
         foreach ($filas as $f) {
             $lineas[] = sprintf(
@@ -122,19 +126,28 @@ final class Rankings
         }
 
         $lineas[] = '';
-        $lineas[] = 'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>';
+        // "Total" a secas no cerraría con el de /mes: esto suma sólo
+        // las que se muestran, no todas las del período.
+        $lineas[] = sprintf(
+            'Total de est%s %d: <b>%s</b>',
+            count($filas) === 1 ? 'a' : 'as',
+            count($filas),
+            ExpenseCard::escapar($total->formatear())
+        );
 
         return implode("\n", $lineas);
     }
 
-    /** "1/7 al 30/9", que es más corto de leer que dos fechas completas. */
-    private static function periodo(DateTimeImmutable $desde, DateTimeImmutable $hasta): string
-    {
-        return $desde->format('j/n') . ' al ' . $hasta->format('j/n/Y');
-    }
-
+    /**
+     * Una fecha de la base, en formato local.
+     *
+     * Con `createFromFormat` y no `new DateTimeImmutable`: éste último,
+     * ante una cadena vacía, devuelve la fecha de hoy en silencio.
+     */
     private static function soloDia(string $fecha): string
     {
-        return (new DateTimeImmutable($fecha))->format('d/m/Y');
+        $dia = DateTimeImmutable::createFromFormat('Y-m-d', $fecha);
+
+        return $dia === false ? $fecha : $dia->format('d/m/Y');
     }
 }

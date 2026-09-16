@@ -134,6 +134,29 @@ final class Client
     }
 
     /**
+     * Borra un mensaje del chat.
+     *
+     * Existe para una sola cosa: sacar del historial el token de Mercado
+     * Pago apenas se usa. La credencial pegada en el chat queda si no,
+     * para siempre, en los servidores de Telegram y en cada sesión
+     * abierta del usuario.
+     *
+     * No revienta si falla —en chats privados la Bot API sólo deja
+     * borrar hasta 48 horas— porque no poder borrarlo no es motivo para
+     * abortar el vínculo.
+     */
+    public function borrarMensaje(int $chatId, int $messageId): bool
+    {
+        try {
+            $this->llamar('deleteMessage', ['chat_id' => $chatId, 'message_id' => $messageId]);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * Publica el menú de comandos que Telegram muestra al tocar "/".
      *
      * @return array<string,mixed>

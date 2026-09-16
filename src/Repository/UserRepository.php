@@ -34,7 +34,6 @@ final class UserRepository
         return $fila === false ? null : $fila;
     }
 
-    /** @return array<string,mixed>|null */
     /**
      * Da vuelta la preferencia de avisos y devuelve cómo quedó.
      *
@@ -45,8 +44,11 @@ final class UserRepository
      */
     public function alternarAvisos(int $userId): bool
     {
+        // IF y no `1 - avisos`: sobre un valor inesperado —un backfill,
+        // una carga a mano— la resta da -1 y después 2, y la preferencia
+        // no vuelve a valer 1 nunca más.
         $this->pdo
-            ->prepare('UPDATE users SET avisos = 1 - avisos WHERE id = ?')
+            ->prepare('UPDATE users SET avisos = IF(avisos = 1, 0, 1) WHERE id = ?')
             ->execute([$userId]);
 
         $sentencia = $this->pdo->prepare('SELECT avisos FROM users WHERE id = ?');
@@ -55,10 +57,11 @@ final class UserRepository
         return (int) $sentencia->fetchColumn() === 1;
     }
 
+    /** @return array<string,mixed>|null */
     public function porId(int $userId): ?array
     {
         $sentencia = $this->pdo->prepare(
-            'SELECT id, telegram_chat_id, nombre, zona_horaria, moneda_base, estado
+            'SELECT id, telegram_chat_id, nombre, zona_horaria, moneda_base, avisos, estado
              FROM users WHERE id = ?'
         );
         $sentencia->execute([$userId]);

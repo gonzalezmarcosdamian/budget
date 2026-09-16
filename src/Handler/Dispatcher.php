@@ -13,14 +13,10 @@ use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
-use Budget\Integracion\MercadoPago;
-use Budget\Repository\MercadoPagoRepository;
 use Budget\Repository\RecurringRepository;
 use Budget\Repository\UserRepository;
 use Budget\Support\Clock;
-use Budget\Support\Cifrado;
 use Budget\Support\Config;
-use Budget\Support\Http;
 use Budget\Support\Logger;
 use Budget\Support\Money;
 use Budget\Telegram\Client;
@@ -138,22 +134,10 @@ final class Dispatcher
                 $userId,
                 Periodo::desde(Periodo::TRIMESTRE, $hoy)
             ),
-            '/topgastos' => $this->rankings->topGastos(
-                $userId,
-                Periodo::desde(Periodo::MES, $hoy)->desde,
-                Periodo::desde(Periodo::MES, $hoy)->hasta
-            ),
-            '/topentrantes' => $this->rankings->topEntrantes(
-                $userId,
-                Periodo::desde(Periodo::MES, $hoy)->desde,
-                Periodo::desde(Periodo::MES, $hoy)->hasta
-            ),
-            '/topsalientes' => $this->rankings->topSalientes(
-                $userId,
-                Periodo::desde(Periodo::MES, $hoy)->desde,
-                Periodo::desde(Periodo::MES, $hoy)->hasta
-            ),
-            '/mercadopago' => self::wizardMercadoPago(),
+            '/topgastos' => $this->rankings->topGastos($userId, Periodo::desde(Periodo::MES, $hoy)),
+            '/topentrantes' => $this->rankings->topEntrantes($userId, Periodo::desde(Periodo::MES, $hoy)),
+            '/topsalientes' => $this->rankings->topSalientes($userId, Periodo::desde(Periodo::MES, $hoy)),
+            '/mercadopago' => MercadoPagoWizard::pasos(),
             '/avisos' => $this->alternarAvisos($userId),
             '/recurrentes' => $this->reportes->recurrentes($userId),
             '/revisar' => $this->revisar($userId, $update->chatId),
@@ -170,12 +154,17 @@ final class Dispatcher
 
     private function manejarTexto(int $userId, Update $update): void
     {
-        // Antes que nada: un token de Mercado Pago pegado en el chat.
-        // Empieza con APP_USR- y no se parece a nada que alguien escriba
-        // de casualidad, así que se reconoce solo y el wizard no necesita
-        // guardar en qué paso está cada usuario.
-        if (self::pareceTokenDeMercadoPago($update->texto)) {
-            $this->vincularMercadoPago($userId, $update);
+        // Antes que nada, y por substring y no por patrón exacto: un
+        // mensaje que contenga un token de Mercado Pago no puede seguir
+        // de largo. Si no calza exacto —"Access Token: APP_USR-...", o
+        // pegado junto a la public key— terminaría en el parser y de ahí
+        // en el proveedor de IA, que es mandarle a un tercero una
+        // credencial de pleno acceso a la cuenta de dinero del usuario.
+        //
+        // Cortar acá es la diferencia entre un vínculo que falla y una
+        // credencial filtrada.
+        if (MercadoPagoWizard::mencionaUnToken($update->texto)) {
+            $this->wizardMp()->vincular($userId, $update);
 
             return;
         }
@@ -861,83 +850,14 @@ final class Dispatcher
      * de verdad necesitaría guardar en qué paso está cada usuario, y
      * para dos pasos no vale la máquina de estados.
      */
-    /** El token de producción de Mercado Pago tiene una forma inconfundible. */
-    private static function pareceTokenDeMercadoPago(string $texto): bool
+    private function wizardMp(): MercadoPagoWizard
     {
-        return preg_match('/^APP_USR-[A-Za-z0-9._-]{20,}$/', trim($texto)) === 1;
-    }
-
-    /**
-     * Guarda el token y deja la cuenta lista.
-     *
-     * Se verifica contra la API antes de guardarlo: un token que no
-     * sirve, guardado, hace fallar el cron en silencio todas las horas.
-     */
-    private function vincularMercadoPago(int $userId, Update $update): void
-    {
-        $token = trim($update->texto);
-
-        try {
-            $cuenta = (new Http())->getJson(
-                'https://api.mercadopago.com/users/me',
-                ['Authorization: Bearer ' . $token]
-            );
-        } catch (Throwable $e) {
-            $this->log->advertencia('token de Mercado Pago rechazado', ['user' => $userId]);
-            $this->telegram->enviarMensaje(
-                $update->chatId,
-                "❌ Mercado Pago no aceptó ese token.\n\n"
-                . '<i>Fijate que sea el de <b>producción</b> y no el de prueba. '
-                . 'Con /mercadopago tenés los pasos otra vez.</i>'
-            );
-
-            return;
-        }
-
-        $mpUserId = (int) ($cuenta['id'] ?? 0);
-
-        if ($mpUserId === 0) {
-            $this->telegram->enviarMensaje($update->chatId, '❌ No pude leer la cuenta con ese token.');
-
-            return;
-        }
-
-        (new MercadoPagoRepository($this->gastos->pdo()))->vincular(
-            $userId,
-            $mpUserId,
-            (string) ($cuenta['nickname'] ?? ''),
-            Cifrado::conClaveHex($this->config->claveDeCifrado())->cifrar($token)
+        return new MercadoPagoWizard(
+            $this->telegram,
+            $this->gastos->pdo(),
+            $this->config->claveDeCifrado(),
+            $this->log
         );
-
-        $this->telegram->enviarMensaje(
-            $update->chatId,
-            sprintf(
-                "✅ Listo, <b>%s</b> quedó conectada.\n\n"
-                    . "En la próxima hora traigo tu historial del último año.\n\n"
-                    . '<i>Importo en silencio. Si querés que te avise cada vez, /avisos.</i>',
-                ExpenseCard::escapar(MercadoPago::nombreLegible((string) ($cuenta['nickname'] ?? 'tu cuenta')))
-            )
-        );
-    }
-
-    private static function wizardMercadoPago(): string
-    {
-        return implode("\n", [
-            '💳 <b>Conectar Mercado Pago</b>',
-            '',
-            'Una vez conectada, cargo tus movimientos solo, cada hora.',
-            '',
-            '<b>1.</b> Entrá a <a href="https://www.mercadopago.com.ar/developers/panel">'
-                . 'mercadopago.com.ar/developers/panel</a> con tu cuenta.',
-            '<b>2.</b> Creá una aplicación (cualquier nombre sirve) y abrí '
-                . '<b>Credenciales de producción</b>.',
-            '<b>3.</b> Copiá el <b>Access Token</b> y pegámelo acá como mensaje.',
-            '',
-            '<i>Empieza con APP_USR- y lo reconozco solo. Lo guardo cifrado y '
-                . 'sólo lo uso para leer tus movimientos: no puedo mover plata.</i>',
-            '',
-            '<i>Si te arrepentís, con /avisos apagás lo automático.</i>',
-        ]);
     }
 
     /** Prende o apaga los mensajes que el bot manda sin que se los pidan. */

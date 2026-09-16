@@ -25,6 +25,11 @@ final class MercadoPagoRepository
             'INSERT INTO mp_cuentas (user_id, mp_user_id, apodo, token_cifrado)
              VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
+                -- Antes que mp_user_id, porque MySQL evalúa de izquierda
+                -- a derecha: si la cuenta cambió hay que volver a traer
+                -- el historial, y con ultima_sync vieja no se traería
+                -- nada de la cuenta nueva.
+                ultima_sync = IF(mp_user_id = VALUES(mp_user_id), ultima_sync, NULL),
                 mp_user_id = VALUES(mp_user_id),
                 apodo = VALUES(apodo),
                 token_cifrado = VALUES(token_cifrado),

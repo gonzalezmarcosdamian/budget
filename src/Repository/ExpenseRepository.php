@@ -750,9 +750,9 @@ final class ExpenseRepository
     /**
      * El total de cada mes dentro de un rango arbitrario.
      *
-     * Distinto de `totalPorMes`, que va por año calendario: acá el rango
-     * puede cruzar diciembre, que es el caso normal de "los últimos doce
-     * meses" y de cualquier trimestre entre noviembre y febrero.
+     * El rango puede cruzar diciembre, que es el caso normal de "los
+     * últimos doce meses" y de cualquier trimestre entre noviembre y
+     * febrero.
      *
      * @return array<string,Money> "2026-08" => total, en orden
      */
@@ -778,41 +778,6 @@ final class ExpenseRepository
 
         foreach ($sentencia->fetchAll() as $f) {
             $porMes[(string) $f['mes']] = Money::deDecimal((string) $f['total']);
-        }
-
-        return $porMes;
-    }
-
-    /**
-     * El total de cada mes del año, en una sola consulta.
-     *
-     * @return array<int,Money> mes (1-12) => total, sólo los que tienen algo
-     */
-    public function totalPorMes(int $userId, int $anio): array
-    {
-        $sentencia = $this->pdo->prepare(
-            'SELECT MONTH(fecha) AS mes, SUM(monto_ars) AS total
-             FROM expenses
-             WHERE user_id = ? AND estado = ? AND tipo = ?
-               AND fecha BETWEEN ? AND ?
-             GROUP BY MONTH(fecha)
-             ORDER BY mes'
-        );
-        // Un rango de fechas y no YEAR(fecha): con la función alrededor
-        // de la columna el índice se usa a medias y la consulta recorre
-        // el historial completo del usuario, pida el año que pida.
-        $sentencia->execute([
-            $userId,
-            self::ESTADO_CONFIRMADO,
-            Draft::TIPO_GASTO,
-            sprintf('%04d-01-01', $anio),
-            sprintf('%04d-12-31', $anio),
-        ]);
-
-        $porMes = [];
-
-        foreach ($sentencia->fetchAll() as $fila) {
-            $porMes[(int) $fila['mes']] = Money::deDecimal((string) $fila['total']);
         }
 
         return $porMes;
