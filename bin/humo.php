@@ -21,7 +21,9 @@ declare(strict_types=1);
 
 use Budget\App;
 use Budget\Expense\CategoryGuesser;
+use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
+use Budget\Handler\Rankings;
 use Budget\Handler\Reports;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
@@ -72,6 +74,8 @@ $reportes = new Reports(
 );
 
 $hoy = $app->reloj->ahora();
+$rankings = new Rankings(new ExpenseRepository($pdo));
+$mes = Periodo::desde(Periodo::MES, $hoy);
 
 printf("Usuario %d · %s\n", $userId, $hoy->format('d/m/Y H:i'));
 
@@ -79,7 +83,13 @@ printf("Usuario %d · %s\n", $userId, $hoy->format('d/m/Y H:i'));
 $comandos = [
     '/hoy' => static fn (): string => $reportes->delDia($userId, $hoy),
     '/mes' => static fn (): string => $reportes->delMes($userId, $hoy),
-    '/anio' => static fn (): string => $reportes->delAnio($userId, $hoy),
+    '/anio' => static fn (): string
+        => $reportes->delPeriodo($userId, Periodo::desde(Periodo::ANIO, $hoy)),
+    '/trimestre' => static fn (): string
+        => $reportes->delPeriodo($userId, Periodo::desde(Periodo::TRIMESTRE, $hoy)),
+    '/topgastos' => static fn (): string => $rankings->topGastos($userId, $mes->desde, $mes->hasta),
+    '/topentrantes' => static fn (): string => $rankings->topEntrantes($userId, $mes->desde, $mes->hasta),
+    '/topsalientes' => static fn (): string => $rankings->topSalientes($userId, $mes->desde, $mes->hasta),
     '/flujo' => static fn (): string => $reportes->flujo($userId, $hoy),
     '/ultimos' => static fn (): string => $reportes->ultimos($userId),
     '/inversiones' => static fn (): string => $reportes->inversiones($userId, $hoy),
@@ -129,7 +139,13 @@ foreach ($preguntas as $texto) {
 // El menú que Telegram publica tiene que coincidir con lo que se probó.
 $publicados = array_map(static fn (string $c): string => '/' . $c, array_keys(Menu::COMANDOS));
 $probados = array_keys($comandos);
-$sinProbar = array_values(array_diff($publicados, $probados, ['/ayuda']));
+// /mercadopago y /avisos no rinden texto de reporte: uno son
+// instrucciones fijas y el otro escribe una preferencia.
+$sinProbar = array_values(array_diff(
+    $publicados,
+    $probados,
+    ['/ayuda', '/mercadopago', '/avisos']
+));
 
 echo "\n" . str_repeat('=', 66) . "\n";
 

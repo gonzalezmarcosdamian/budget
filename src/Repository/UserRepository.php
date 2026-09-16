@@ -35,6 +35,26 @@ final class UserRepository
     }
 
     /** @return array<string,mixed>|null */
+    /**
+     * Da vuelta la preferencia de avisos y devuelve cómo quedó.
+     *
+     * En una sola sentencia y no leyendo-y-escribiendo: dos toques
+     * seguidos desde el teclado de Telegram llegan casi juntos, y con
+     * lectura previa los dos verían el mismo valor y escribirían lo
+     * mismo, dejando la preferencia donde estaba.
+     */
+    public function alternarAvisos(int $userId): bool
+    {
+        $this->pdo
+            ->prepare('UPDATE users SET avisos = 1 - avisos WHERE id = ?')
+            ->execute([$userId]);
+
+        $sentencia = $this->pdo->prepare('SELECT avisos FROM users WHERE id = ?');
+        $sentencia->execute([$userId]);
+
+        return (int) $sentencia->fetchColumn() === 1;
+    }
+
     public function porId(int $userId): ?array
     {
         $sentencia = $this->pdo->prepare(

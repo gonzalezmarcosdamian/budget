@@ -9,18 +9,24 @@ use Budget\Ai\Router;
 use Budget\Expense\Draft;
 use Budget\Expense\CategoryGuesser;
 use Budget\Expense\FastParser;
+use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
+use Budget\Integracion\MercadoPago;
+use Budget\Repository\MercadoPagoRepository;
 use Budget\Repository\RecurringRepository;
 use Budget\Repository\UserRepository;
 use Budget\Support\Clock;
+use Budget\Support\Cifrado;
 use Budget\Support\Config;
+use Budget\Support\Http;
 use Budget\Support\Logger;
 use Budget\Support\Money;
 use Budget\Telegram\Client;
 use Budget\Telegram\Menu;
 use Budget\Telegram\Update;
+use Throwable;
 
 /**
  * Enruta cada update al handler que corresponde.
@@ -40,6 +46,7 @@ final class Dispatcher
         private readonly FastParser $parser,
         private readonly Router $ia,
         private readonly Reports $reportes,
+        private readonly Rankings $rankings,
         private readonly Config $config,
         private readonly Clock $reloj,
         private readonly Logger $log,
@@ -123,7 +130,31 @@ final class Dispatcher
             '/mes' => $this->reportes->delMes($userId, $hoy),
             '/ultimos' => $this->reportes->ultimos($userId),
             '/flujo', '/caja' => $this->reportes->flujo($userId, $hoy),
-            '/anio', '/año' => $this->reportes->delAnio($userId, $hoy),
+            '/anio', '/año' => $this->reportes->delPeriodo(
+                $userId,
+                Periodo::desde(Periodo::ANIO, $hoy)
+            ),
+            '/trimestre' => $this->reportes->delPeriodo(
+                $userId,
+                Periodo::desde(Periodo::TRIMESTRE, $hoy)
+            ),
+            '/topgastos' => $this->rankings->topGastos(
+                $userId,
+                Periodo::desde(Periodo::MES, $hoy)->desde,
+                Periodo::desde(Periodo::MES, $hoy)->hasta
+            ),
+            '/topentrantes' => $this->rankings->topEntrantes(
+                $userId,
+                Periodo::desde(Periodo::MES, $hoy)->desde,
+                Periodo::desde(Periodo::MES, $hoy)->hasta
+            ),
+            '/topsalientes' => $this->rankings->topSalientes(
+                $userId,
+                Periodo::desde(Periodo::MES, $hoy)->desde,
+                Periodo::desde(Periodo::MES, $hoy)->hasta
+            ),
+            '/mercadopago' => self::wizardMercadoPago(),
+            '/avisos' => $this->alternarAvisos($userId),
             '/recurrentes' => $this->reportes->recurrentes($userId),
             '/revisar' => $this->revisar($userId, $update->chatId),
             '/inversiones' => $this->reportes->inversiones($userId, $hoy),
@@ -139,6 +170,16 @@ final class Dispatcher
 
     private function manejarTexto(int $userId, Update $update): void
     {
+        // Antes que nada: un token de Mercado Pago pegado en el chat.
+        // Empieza con APP_USR- y no se parece a nada que alguien escriba
+        // de casualidad, así que se reconoce solo y el wizard no necesita
+        // guardar en qué paso está cada usuario.
+        if (self::pareceTokenDeMercadoPago($update->texto)) {
+            $this->vincularMercadoPago($userId, $update);
+
+            return;
+        }
+
         // Primero la pregunta y después el gasto, y el orden no es un
         // detalle: "pasame el detalle de agosto 2026" tiene un número
         // adentro, así que el parser rápido lo tomaba por un gasto de
@@ -809,6 +850,107 @@ final class Dispatcher
         );
 
         return '';
+    }
+
+    /**
+     * Cómo conectar Mercado Pago, paso a paso.
+     *
+     * No es un asistente con estado: el token de Mercado Pago empieza
+     * con APP_USR- y no se parece a nada más que un usuario escriba, así
+     * que el Dispatcher lo reconoce solo cuando llega pegado. Un wizard
+     * de verdad necesitaría guardar en qué paso está cada usuario, y
+     * para dos pasos no vale la máquina de estados.
+     */
+    /** El token de producción de Mercado Pago tiene una forma inconfundible. */
+    private static function pareceTokenDeMercadoPago(string $texto): bool
+    {
+        return preg_match('/^APP_USR-[A-Za-z0-9._-]{20,}$/', trim($texto)) === 1;
+    }
+
+    /**
+     * Guarda el token y deja la cuenta lista.
+     *
+     * Se verifica contra la API antes de guardarlo: un token que no
+     * sirve, guardado, hace fallar el cron en silencio todas las horas.
+     */
+    private function vincularMercadoPago(int $userId, Update $update): void
+    {
+        $token = trim($update->texto);
+
+        try {
+            $cuenta = (new Http())->getJson(
+                'https://api.mercadopago.com/users/me',
+                ['Authorization: Bearer ' . $token]
+            );
+        } catch (Throwable $e) {
+            $this->log->advertencia('token de Mercado Pago rechazado', ['user' => $userId]);
+            $this->telegram->enviarMensaje(
+                $update->chatId,
+                "❌ Mercado Pago no aceptó ese token.\n\n"
+                . '<i>Fijate que sea el de <b>producción</b> y no el de prueba. '
+                . 'Con /mercadopago tenés los pasos otra vez.</i>'
+            );
+
+            return;
+        }
+
+        $mpUserId = (int) ($cuenta['id'] ?? 0);
+
+        if ($mpUserId === 0) {
+            $this->telegram->enviarMensaje($update->chatId, '❌ No pude leer la cuenta con ese token.');
+
+            return;
+        }
+
+        (new MercadoPagoRepository($this->gastos->pdo()))->vincular(
+            $userId,
+            $mpUserId,
+            (string) ($cuenta['nickname'] ?? ''),
+            Cifrado::conClaveHex($this->config->claveDeCifrado())->cifrar($token)
+        );
+
+        $this->telegram->enviarMensaje(
+            $update->chatId,
+            sprintf(
+                "✅ Listo, <b>%s</b> quedó conectada.\n\n"
+                    . "En la próxima hora traigo tu historial del último año.\n\n"
+                    . '<i>Importo en silencio. Si querés que te avise cada vez, /avisos.</i>',
+                ExpenseCard::escapar(MercadoPago::nombreLegible((string) ($cuenta['nickname'] ?? 'tu cuenta')))
+            )
+        );
+    }
+
+    private static function wizardMercadoPago(): string
+    {
+        return implode("\n", [
+            '💳 <b>Conectar Mercado Pago</b>',
+            '',
+            'Una vez conectada, cargo tus movimientos solo, cada hora.',
+            '',
+            '<b>1.</b> Entrá a <a href="https://www.mercadopago.com.ar/developers/panel">'
+                . 'mercadopago.com.ar/developers/panel</a> con tu cuenta.',
+            '<b>2.</b> Creá una aplicación (cualquier nombre sirve) y abrí '
+                . '<b>Credenciales de producción</b>.',
+            '<b>3.</b> Copiá el <b>Access Token</b> y pegámelo acá como mensaje.',
+            '',
+            '<i>Empieza con APP_USR- y lo reconozco solo. Lo guardo cifrado y '
+                . 'sólo lo uso para leer tus movimientos: no puedo mover plata.</i>',
+            '',
+            '<i>Si te arrepentís, con /avisos apagás lo automático.</i>',
+        ]);
+    }
+
+    /** Prende o apaga los mensajes que el bot manda sin que se los pidan. */
+    private function alternarAvisos(int $userId): string
+    {
+        $prendidos = $this->usuarios->alternarAvisos($userId);
+
+        return $prendidos
+            ? "🔔 Avisos <b>prendidos</b>.\n\n"
+                . '<i>Te voy a avisar cuando importe movimientos nuevos de Mercado Pago.</i>'
+            : "🔕 Avisos <b>apagados</b>.\n\n"
+                . '<i>Importo en silencio. Los recordatorios de gastos que se repiten '
+                . 'siguen andando: ésos los pediste vos.</i>';
     }
 
     private function ayuda(): string

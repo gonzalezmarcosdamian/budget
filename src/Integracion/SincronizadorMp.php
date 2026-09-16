@@ -300,6 +300,14 @@ final class SincronizadorMp
             return;
         }
 
+        // Silencio por defecto: importar en segundo plano no es motivo
+        // para interrumpir. Cargando un año de historial esto fueron
+        // seis mensajes seguidos sin que el usuario hiciera nada, y la
+        // información ya está cuando pregunta. Se prende con /avisos.
+        if ((int) ($usuario['avisos'] ?? 0) !== 1) {
+            return;
+        }
+
         $resumen = $this->gastos->resumenDeLote($userId, $lote, ExpenseRepository::ESTADO_CONFIRMADO);
 
         $this->telegram->enviarMensaje(

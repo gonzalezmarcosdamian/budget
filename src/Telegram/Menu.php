@@ -28,12 +28,18 @@ final class Menu
     public const COMANDOS = [
         'hoy' => 'Lo del día, contra tu promedio',
         'mes' => 'El mes: fijo vs variable, proyección y transferencias',
-        'anio' => 'Mes a mes del año',
+        'trimestre' => 'Los ultimos 3 meses, mes a mes',
+        'anio' => 'Los ultimos 12 meses, mes a mes',
+        'topgastos' => 'Los gastos mas grandes del mes',
+        'topentrantes' => 'Quien te mando mas plata',
+        'topsalientes' => 'A quien le mandaste mas plata',
         'flujo' => 'Flujo de caja: que entro, que salio y adonde fue',
         'ultimos' => 'Los últimos 10 movimientos',
         'inversiones' => 'El portafolio contra el de hace un mes',
         'revisar' => 'Clasificar los movimientos que quedaron sin categoria',
         'recurrentes' => 'Los gastos que se repiten todos los meses',
+        'mercadopago' => 'Conectar tu cuenta de Mercado Pago',
+        'avisos' => 'Prender o apagar los avisos automaticos',
         'ayuda' => 'Todo lo que sé hacer',
     ];
 

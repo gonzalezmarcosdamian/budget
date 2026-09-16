@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Budget\Handler;
 
 use Budget\Expense\Draft;
+use Budget\Expense\Periodo;
 use Budget\Expense\Pregunta;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
@@ -295,8 +296,8 @@ final class Reports
         usort($entraron, static fn (array $a, array $b): int => $a['neto'] <=> $b['neto']);
 
         $bloques = [
-            ['↗', '−', 'Mandaste de más', $salieron],
-            ['↘', '+', 'Te mandaron de más', $entraron],
+            ['➖', '−', 'Mandaste de más', $salieron],
+            ['➕', '+', 'Te mandaron de más', $entraron],
         ];
 
         $lineas = [];
@@ -523,229 +524,72 @@ final class Reports
         return $lineas === [] ? [] : array_merge(['', '<b>Adónde fue</b>'], $lineas);
     }
 
-    /**
-     * El portafolio hoy contra el de hace un mes.
-     *
-     * Separa la cartera de inversión de las reservas —dólares, saldo
-     * quieto— porque se miden distinto: una por rendimiento, la otra por
-     * cuánta hay. Promediarlas daría un rendimiento licuado por la plata
-     * que está parada a propósito.
-     *
-     * Sobre la cartera, la diferencia se abre en lo que se movió por
-     * precio y lo que se movió por aporte. Ver Patrimonio::comparar.
-     */
+    /** Ver Handler\CarteraCard, que es donde vive el reporte entero. */
     public function inversiones(int $userId, DateTimeImmutable $hoy): string
     {
-        $actual = $this->patrimonio->ultimo($userId);
+        return (new CarteraCard($this->patrimonio))->inversiones($userId, $hoy);
+    }
 
-        if ($actual === null) {
-            return "📈 Todavía no tengo ninguna foto del portafolio.
+    /**
+     * Un período largo: el trimestre o los últimos doce meses.
+     *
+     * Mes a mes y con el promedio, que es lo que vuelve comparable un
+     * total de tres meses contra uno de doce. Sin el promedio, el número
+     * grande sólo dice que el período era largo.
+     */
+    public function delPeriodo(int $userId, Periodo $p): string
+    {
+        $total = $this->gastos->totalEntre($userId, $p->desde, $p->hasta);
 
-"
-                . '<i>Se toma con <code>php bin/snapshot.php</code>. '
-                . 'Hace falta una por mes para poder comparar.</i>';
+        if ($total->centavos === 0) {
+            return '📆 No hay gastos cargados en ' . ExpenseCard::escapar($p->etiqueta) . '.';
         }
-
-        $cartera = self::deClase($actual['posiciones'], PatrimonioRepository::CLASE_INVERSION);
-        $reservas = self::deClase($actual['posiciones'], PatrimonioRepository::CLASE_RESERVA);
 
         $lineas = [
-            '📈 <b>Inversiones</b>  <i>(' . $actual['fecha']->format('d/m/Y') . ')</i>',
+            '📆 <b>' . ExpenseCard::escapar(ucfirst($p->etiqueta)) . '</b>',
+            '<i>' . $p->desde->format('j/n/Y') . ' al ' . $p->hasta->format('j/n/Y') . '</i>',
             '',
-            'Cartera: <b>' . ExpenseCard::escapar(self::sumaDe($cartera)->formatear()) . '</b>',
+            'Total: <b>' . ExpenseCard::escapar($total->formatear()) . '</b>',
+            'Promedio: <b>' . ExpenseCard::escapar(
+                Money::deCentavos(intdiv($total->centavos, max(1, $p->meses())))->formatear()
+            ) . '</b> por mes',
+            '',
         ];
 
-        if ($reservas !== []) {
-            $lineas[] = 'Reservas: <b>' . ExpenseCard::escapar(self::sumaDe($reservas)->formatear()) . '</b>';
-            $lineas[] = 'Total: <b>' . ExpenseCard::escapar($actual['total']->formatear()) . '</b>';
-        }
-
-        $previo = $this->patrimonio->delMesAnterior($userId, $actual['fecha']);
-
-        if ($previo !== null) {
-            foreach (self::mesContraMes($cartera, $reservas, $previo) as $linea) {
-                $lineas[] = $linea;
-            }
-
-            return implode("\n", $lineas);
-        }
-
-        // Sin foto anterior no hay rendimiento que mostrar, pero las
-        // posiciones sí: son las inversiones. La primera versión sólo
-        // las listaba dentro de la comparación, así que el comando
-        // quedaba casi vacío hasta el mes siguiente.
-        foreach (self::composicion($cartera, $reservas) as $linea) {
-            $lineas[] = $linea;
+        foreach ($this->gastos->totalPorMesEntre($userId, $p->desde, $p->hasta) as $mes => $monto) {
+            $lineas[] = sprintf(
+                '%s — <b>%s</b>',
+                ExpenseCard::escapar(self::nombreDelMesCorto($mes)),
+                ExpenseCard::escapar($monto->formatear())
+            );
         }
 
         $lineas[] = '';
-        $lineas[] = '<i>Es la primera foto: el mes que viene te digo cuánto rindió.</i>';
+        $lineas[] = '<b>Por categoría</b>';
+
+        foreach (array_slice($this->gastos->totalPorCategoria($userId, $p->desde, $p->hasta), 0, 8) as $r) {
+            $lineas[] = sprintf(
+                '%s %s — <b>%s</b>  <i>%d%%</i>',
+                $r['emoji'],
+                ExpenseCard::escapar($r['categoria']),
+                ExpenseCard::escapar($r['total']->formatear()),
+                $r['total']->porcentajeDe($total)
+            );
+        }
 
         return implode("\n", $lineas);
     }
 
-    /**
-     * Qué hay en la cartera, de mayor a menor.
-     *
-     * @param array<string,array<string,mixed>> $cartera
-     * @param array<string,array<string,mixed>> $reservas
-     * @return list<string>
-     */
-    private static function composicion(array $cartera, array $reservas): array
+    /** "2026-08" -> "Agosto 2026". */
+    private static function nombreDelMesCorto(string $aaaaMm): string
     {
-        $total = self::sumaDe($cartera);
-        $ordenadas = $cartera;
-        uasort(
-            $ordenadas,
-            static fn (array $a, array $b): int => $b['valor']->centavos <=> $a['valor']->centavos
-        );
-
-        $lineas = ['', '<b>Composición</b>'];
-
-        foreach ($ordenadas as $p) {
-            $lineas[] = sprintf(
-                '%s — <b>%s</b>  <i>%d%%</i>',
-                ExpenseCard::escapar((string) $p['simbolo']),
-                ExpenseCard::escapar($p['valor']->formatear()),
-                $p['valor']->porcentajeDe($total)
-            );
-        }
-
-        if ($reservas === []) {
-            return $lineas;
-        }
-
-        $lineas[] = '';
-        $lineas[] = '<b>Reservas</b>';
-
-        foreach ($reservas as $p) {
-            $lineas[] = sprintf(
-                '%s — <b>%s</b>',
-                ExpenseCard::escapar((string) $p['simbolo']),
-                ExpenseCard::escapar($p['valor']->formatear())
-            );
-        }
-
-        return $lineas;
-    }
-
-    /**
-     * @param array<string,array<string,mixed>> $posiciones
-     * @return array<string,array<string,mixed>>
-     */
-    private static function deClase(array $posiciones, string $clase): array
-    {
-        return array_filter(
-            $posiciones,
-            static fn (array $p): bool => ($p['clase'] ?? PatrimonioRepository::CLASE_INVERSION) === $clase
-        );
-    }
-
-    /** @param array<string,array{valor:Money}> $posiciones */
-    private static function sumaDe(array $posiciones): Money
-    {
-        $total = 0;
-
-        foreach ($posiciones as $p) {
-            $total += $p['valor']->centavos;
-        }
-
-        return Money::deCentavos($total);
-    }
-
-    /**
-     * @param array<string,array<string,mixed>> $cartera
-     * @param array<string,array<string,mixed>> $reservas
-     * @param array<string,mixed> $previo
-     * @return list<string>
-     */
-    private static function mesContraMes(array $cartera, array $reservas, array $previo): array
-    {
-        $c = Patrimonio::comparar(
-            $cartera,
-            self::deClase($previo['posiciones'], PatrimonioRepository::CLASE_INVERSION)
-        );
-
-        $lineas = [
-            '',
-            'Hace un mes la cartera era <b>' . ExpenseCard::escapar($c['anterior']->formatear())
-                . '</b>  <i>(' . $previo['fecha']->format('d/m/Y') . ')</i>',
-            '',
-            sprintf(
-                '%s Rendimiento: <b>%s%s</b>%s',
-                $c['porPrecio'] >= 0 ? '🟢' : '🔴',
-                $c['porPrecio'] >= 0 ? '+' : '−',
-                ExpenseCard::escapar(Money::deCentavos(abs($c['porPrecio']))->formatear()),
-                $c['rendimiento'] === null ? '' : sprintf('  <i>(%+.2f%%)</i>', $c['rendimiento'])
-            ),
+        [$anio, $mes] = array_map('intval', explode('-', $aaaaMm));
+        $meses = [
+            1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
         ];
 
-        // Sin esta línea el rendimiento se lee mal en cualquier mes en
-        // que se haya aportado: el total sube y parece ganancia.
-        if ($c['porAporte'] !== 0) {
-            $lineas[] = sprintf(
-                '%s %s <b>%s</b>  <i>no es rendimiento</i>',
-                $c['porAporte'] > 0 ? '➕' : '➖',
-                $c['porAporte'] > 0 ? 'Aportaste' : 'Retiraste',
-                ExpenseCard::escapar(Money::deCentavos(abs($c['porAporte']))->formatear())
-            );
-        }
-
-        foreach (self::variacionDeReservas($reservas, $previo) as $linea) {
-            $lineas[] = $linea;
-        }
-
-        $lineas[] = '';
-        $lineas[] = '<b>Por posición</b>';
-
-        foreach ($c['posiciones'] as $p) {
-            $lineas[] = self::renglonDePosicion($p);
-        }
-
-        return $lineas;
-    }
-
-    /**
-     * Las reservas no rinden: lo único que informa es si subieron o bajaron.
-     *
-     * @param array<string,array<string,mixed>> $reservas
-     * @param array<string,mixed> $previo
-     * @return list<string>
-     */
-    private static function variacionDeReservas(array $reservas, array $previo): array
-    {
-        if ($reservas === []) {
-            return [];
-        }
-
-        $antes = self::sumaDe(self::deClase($previo['posiciones'], PatrimonioRepository::CLASE_RESERVA));
-        $delta = self::sumaDe($reservas)->centavos - $antes->centavos;
-
-        if ($delta === 0) {
-            return [];
-        }
-
-        return [sprintf(
-            '🏦 Reservas: %s%s respecto del mes pasado',
-            $delta > 0 ? '+' : '−',
-            ExpenseCard::escapar(Money::deCentavos(abs($delta))->formatear())
-        )];
-    }
-
-    /** @param array<string,mixed> $p */
-    private static function renglonDePosicion(array $p): string
-    {
-        $delta = (int) $p['porPrecio'];
-        $variacion = $p['variacion'];
-
-        return sprintf(
-            '%s %s — %s%s%s',
-            $delta >= 0 ? '▲' : '▼',
-            ExpenseCard::escapar((string) $p['simbolo']),
-            '<b>' . ExpenseCard::escapar($p['valor']->formatear()) . '</b>',
-            $variacion === null ? '' : sprintf('  <i>%+.2f%%</i>', $variacion),
-            $p['nueva'] === true ? '  <i>nueva</i>' : ($p['cerrada'] === true ? '  <i>cerrada</i>' : '')
-        );
+        return ($meses[$mes] ?? '') . ' ' . $anio;
     }
 
     /** Resumen del año, mes a mes. */

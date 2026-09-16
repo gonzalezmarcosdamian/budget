@@ -192,6 +192,95 @@ final class ExpenseRepository
         );
     }
 
+    /**
+     * Los gastos más grandes del período, uno por uno.
+     *
+     * No agrupa por categoría ni por comercio: la pregunta que contesta
+     * es "¿qué fue lo más caro que pagué?", y para eso el movimiento
+     * suelto es la unidad. Agrupar escondería justamente el que duele.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function mayoresGastos(
+        int $userId,
+        DateTimeImmutable $desde,
+        DateTimeImmutable $hasta,
+        int $limite = 10,
+    ): array {
+        $sentencia = $this->pdo->prepare(
+            'SELECT e.fecha, e.monto_ars, e.comercio,
+                    COALESCE(c.nombre, ?) AS categoria,
+                    COALESCE(c.emoji, ?) AS emoji
+               FROM expenses e
+               LEFT JOIN categories c ON c.id = e.category_id
+              WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ?
+                AND e.fecha BETWEEN ? AND ?
+              ORDER BY e.monto_ars DESC
+              LIMIT ' . max(1, min($limite, 50))
+        );
+        $sentencia->execute([
+            'Sin categoría',
+            '📦',
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        return array_values($sentencia->fetchAll());
+    }
+
+    /**
+     * Las contrapartes que más plata movieron en una dirección.
+     *
+     * En bruto y no en neto, a propósito: el neto contesta "con quién
+     * quedé en deuda" y ya lo muestra /mes. Esto contesta "quién me
+     * mandó más plata", que es otra pregunta y se arruina al netear.
+     *
+     * @param string $tipo Draft::TIPO_INGRESO para entrantes, TIPO_GASTO para salientes
+     * @return list<array{nombre:string, total:Money, movimientos:int}>
+     */
+    public function mayoresTransferencias(
+        int $userId,
+        DateTimeImmutable $desde,
+        DateTimeImmutable $hasta,
+        string $tipo = Draft::TIPO_INGRESO,
+        int $limite = 10,
+    ): array {
+        $sentencia = $this->pdo->prepare(
+            'SELECT COALESCE(cp.alias, MAX(e.comercio)) AS nombre,
+                    SUM(e.monto_ars) AS total,
+                    COUNT(*) AS movimientos
+               FROM expenses e
+               LEFT JOIN contrapartes cp
+                      ON cp.externo = e.contraparte AND cp.user_id = e.user_id
+              WHERE e.user_id = ? AND e.estado = ? AND e.tipo = ?
+                AND e.contraparte IS NOT NULL
+                AND COALESCE(cp.es_propia, 0) = 0
+                AND e.fecha BETWEEN ? AND ?
+              GROUP BY e.contraparte, cp.alias
+              ORDER BY SUM(e.monto_ars) DESC
+              LIMIT ' . max(1, min($limite, 50))
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            $tipo,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        return array_map(
+            static fn (array $f): array => [
+                'nombre' => (string) $f['nombre'],
+                'total' => Money::deDecimal((string) $f['total']),
+                'movimientos' => (int) $f['movimientos'],
+            ],
+            $sentencia->fetchAll()
+        );
+    }
+
     /** Cuántos gastos confirmados hay en el período. */
     public function cantidadEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): int
     {
@@ -656,6 +745,42 @@ final class ExpenseRepository
 
         return $conPersonas->centavos
             + Money::deDecimal((string) ($comercios->fetchColumn() ?: '0'))->centavos;
+    }
+
+    /**
+     * El total de cada mes dentro de un rango arbitrario.
+     *
+     * Distinto de `totalPorMes`, que va por año calendario: acá el rango
+     * puede cruzar diciembre, que es el caso normal de "los últimos doce
+     * meses" y de cualquier trimestre entre noviembre y febrero.
+     *
+     * @return array<string,Money> "2026-08" => total, en orden
+     */
+    public function totalPorMesEntre(int $userId, DateTimeImmutable $desde, DateTimeImmutable $hasta): array
+    {
+        $sentencia = $this->pdo->prepare(
+            "SELECT DATE_FORMAT(fecha, '%Y-%m') AS mes, SUM(monto_ars) AS total
+               FROM expenses
+              WHERE user_id = ? AND estado = ? AND tipo = ?
+                AND fecha BETWEEN ? AND ?
+              GROUP BY DATE_FORMAT(fecha, '%Y-%m')
+              ORDER BY mes"
+        );
+        $sentencia->execute([
+            $userId,
+            self::ESTADO_CONFIRMADO,
+            Draft::TIPO_GASTO,
+            $desde->format('Y-m-d'),
+            $hasta->format('Y-m-d'),
+        ]);
+
+        $porMes = [];
+
+        foreach ($sentencia->fetchAll() as $f) {
+            $porMes[(string) $f['mes']] = Money::deDecimal((string) $f['total']);
+        }
+
+        return $porMes;
     }
 
     /**

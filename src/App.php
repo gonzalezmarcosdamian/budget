@@ -11,6 +11,7 @@ use Budget\Expense\CategoryGuesser;
 use Budget\Expense\FastParser;
 use Budget\Handler\Dispatcher;
 use Budget\Expense\CategoryGuesser as Categorizador;
+use Budget\Handler\Rankings;
 use Budget\Handler\Reports;
 use Budget\Integracion\SincronizadorMp;
 use Budget\Handler\Recordatorios;
@@ -125,6 +126,7 @@ final class App
             recurrentes: new RecurringRepository($pdo),
             parser: new FastParser($this->reloj, new CategoryGuesser()),
             ia: $this->router(),
+            rankings: new Rankings(new ExpenseRepository($pdo)),
             reportes: new Reports(
                 new ExpenseRepository($pdo),
                 new CategoryRepository($pdo),

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Budget\Expense\Draft;
+use Budget\Expense\Periodo;
+use Budget\Handler\Rankings;
 use Budget\Handler\Reports;
 use Budget\Repository\CategoryRepository;
 use Budget\Repository\ExpenseRepository;
@@ -632,4 +634,97 @@ prueba('[db] los netos de transferencias llevan signo', function (): void {
 
     contiene($texto, 'Uno — <b>−$600.000</b>', 'lo que saliste va en negativo');
     contiene($texto, 'Otro — <b>+$350.000</b>', 'lo que entró va en positivo');
+});
+
+prueba('[db] el top de gastos lista los movimientos, no las categorias', function (): void {
+    // La pregunta es "qué fue lo más caro que pagué", y para eso el
+    // movimiento suelto es la unidad: agrupar escondería el que duele.
+    TestDatabase::limpiar();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+    $rankings = new Rankings(new ExpenseRepository($pdo));
+
+    gastoConfirmado($ana, 850_000, 'Ropa Rosario', '2026-09-14');
+    gastoConfirmado($ana, 600_000, 'Viaje cumple', '2026-09-14');
+    gastoConfirmado($ana, 40_000, 'Coto', '2026-09-13');
+    gastoConfirmado($ana, 30_000, 'Coto', '2026-09-12');
+
+    $texto = $rankings->topGastos(
+        $ana,
+        new DateTimeImmutable('2026-09-01'),
+        new DateTimeImmutable('2026-09-30')
+    );
+
+    contiene($texto, '1. ', 'va numerado');
+    contiene($texto, 'Ropa Rosario', 'el más grande primero');
+    afirmar(
+        strpos($texto, 'Ropa Rosario') < strpos($texto, 'Viaje cumple'),
+        'ordenado por monto'
+    );
+    afirmar(
+        substr_count($texto, 'Coto') === 2,
+        'los dos Coto aparecen por separado, no sumados'
+    );
+});
+
+prueba('[db] los tops de transferencias van en bruto y por direccion', function (): void {
+    // En bruto y no en neto a propósito: el neto contesta "con quién
+    // quedé en deuda" y ya lo muestra /mes. Esto contesta "quién movió
+    // más plata conmigo", que se arruina al netear.
+    TestDatabase::limpiar();
+    $pdo = TestDatabase::pdo();
+    $ana = nuevoUsuario();
+    $rankings = new Rankings(new ExpenseRepository($pdo));
+
+    $mande = gastoConfirmado($ana, 900_000, 'Uno', '2026-09-05');
+    $volvio = gastoConfirmado($ana, 800_000, 'Uno', '2026-09-06', Draft::TIPO_INGRESO);
+    $pdo->exec("UPDATE expenses SET contraparte = '900000021' WHERE id IN ({$mande}, {$volvio})");
+
+    $chico = gastoConfirmado($ana, 100_000, 'Otro', '2026-09-07');
+    $pdo->exec("UPDATE expenses SET contraparte = '900000022' WHERE id = {$chico}");
+
+    $desde = new DateTimeImmutable('2026-09-01');
+    $hasta = new DateTimeImmutable('2026-09-30');
+
+    $salientes = $rankings->topSalientes($ana, $desde, $hasta);
+    contiene($salientes, 'Uno — <b>$900.000</b>', 'el bruto, no el neto de $100.000');
+    contiene($salientes, 'Otro — <b>$100.000</b>');
+    contiene($salientes, '➖', 'el signo de lo que sale');
+
+    $entrantes = $rankings->topEntrantes($ana, $desde, $hasta);
+    contiene($entrantes, 'Uno — <b>$800.000</b>', 'del otro lado, lo que entró');
+    contiene($entrantes, '➕', 'el signo de lo que entra');
+    afirmar(!str_contains($entrantes, 'Otro'), 'quien no mandó nada no aparece entre los entrantes');
+});
+
+prueba('[db] el trimestre suma tres meses y promedia sobre tres', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
+    gastoConfirmado($ana, 300_000, 'Julio', '2026-07-15');
+    gastoConfirmado($ana, 300_000, 'Agosto', '2026-08-15');
+    gastoConfirmado($ana, 300_000, 'Septiembre', '2026-09-15');
+    gastoConfirmado($ana, 999_999, 'Junio, afuera', '2026-06-15');
+
+    $texto = $reportes->delPeriodo(
+        $ana,
+        Periodo::desde(Periodo::TRIMESTRE, new DateTimeImmutable('2026-09-20'))
+    );
+
+    contiene($texto, 'Total: <b>$900.000</b>', 'los tres meses');
+    contiene($texto, 'Promedio: <b>$300.000</b>', 'sobre tres, no sobre uno');
+    contiene($texto, 'Julio 2026');
+    afirmar(!str_contains($texto, '999.999'), 'junio queda afuera');
+});
+
+prueba('[db] un periodo sin gastos no inventa un cero', function (): void {
+    TestDatabase::limpiar();
+    $reportes = reportes();
+    $ana = nuevoUsuario();
+
+    contiene(
+        $reportes->delPeriodo($ana, Periodo::desde(Periodo::TRIMESTRE, new DateTimeImmutable('2026-09-20'))),
+        'No hay gastos cargados'
+    );
 });
